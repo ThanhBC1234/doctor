@@ -84,12 +84,15 @@ test('parseInfo', () => {
   assert.equal(parseInfo('info string hello'), null);
 });
 
-test('pickRandomized: chỉ chọn trong cửa sổ điểm', () => {
-  const cands = [{ move: 'a', score: 100 }, { move: 'b', score: 50 }, { move: 'c', score: -300 }];
-  const r = { probability: 1, windowCp: 80 };
+test('pickRandomized: chỉ thay bằng nước kém hơn nước Stockfish chọn, trong cửa sổ điểm', () => {
+  const cands = [{ move: 'a', score: 100 }, { move: 'b', score: 50 }, { move: 'c', score: 20 }, { move: 'd', score: -300 }];
+  const always = { probability: 1, windowCp: 150 };
   const rand = rng(5);
-  for (let i = 0; i < 50; i++) assert.ok(['a', 'b'].includes(pickRandomized(cands, r, rand)));
-  assert.equal(pickRandomized(cands, { probability: 0, windowCp: 80 }), 'a');
+  for (let i = 0; i < 50; i++) assert.ok(['b', 'c'].includes(pickRandomized(cands, always, rand, 'a')));
+  for (let i = 0; i < 50; i++) assert.equal(pickRandomized(cands, always, rand, 'b'), 'c', 'không thay bằng a (tốt hơn)');
+  assert.equal(pickRandomized(cands, always, rand, 'c'), 'c', 'không còn nước kém hơn trong cửa sổ: giữ nguyên');
+  assert.equal(pickRandomized(cands, { probability: 0, windowCp: 150 }, rand, 'b'), 'b');
+  assert.equal(pickRandomized(cands, null, rand, 'b'), 'b');
   assert.equal(pickRandomized(cands, null), 'a');
-  assert.equal(pickRandomized([], r), null);
+  assert.equal(pickRandomized([], always), null);
 });

@@ -15,7 +15,7 @@ test('mọi mức đều cho tham số hợp lệ với Stockfish 19 lite', () =
     assert.equal(p.elo, elo);
     const skill = p.options['Skill Level'];
     assert.ok(Number.isInteger(skill) && skill >= 0 && skill <= 20, `Skill Level ${skill}`);
-    assert.ok([1, 3].includes(p.options.MultiPV));
+    assert.ok(Number.isInteger(p.options.MultiPV) && p.options.MultiPV >= 1 && p.options.MultiPV <= 8);
     assert.match(p.goCommand, /^go (depth [1-9]|movetime \d+)$/);
     if (elo < ENGINE_ELO_MIN) {
       assert.equal(p.options.UCI_LimitStrength, false);
@@ -31,16 +31,18 @@ test('mọi mức đều cho tham số hợp lệ với Stockfish 19 lite', () =
   }
 });
 
-test('mức thấp yếu dần đều', () => {
-  let prevDepth = 0;
-  let prevSkill = -1;
+test('mức dưới 1320 dùng Skill 0 (≈ 1320 của Stockfish) và càng thấp càng hay đi nước kém', () => {
+  let prev = null;
   for (const elo of [1000, 1050, 1100, 1150, 1200, 1250, 1300]) {
     const p = eloToEngineParams(elo);
-    const depth = Number(p.goCommand.split(' ')[2]);
-    assert.ok(depth >= prevDepth);
-    assert.ok(p.options['Skill Level'] >= prevSkill);
-    prevDepth = depth;
-    prevSkill = p.options['Skill Level'];
+    assert.equal(p.options['Skill Level'], 0, 'không được mạnh hơn mức 1320');
+    if (prev) {
+      assert.ok(p.randomize.probability < prev.randomize.probability, `${elo}: xác suất giảm dần`);
+      assert.ok(p.randomize.windowCp < prev.randomize.windowCp, `${elo}: cửa sổ hẹp dần`);
+      assert.ok(p.options.MultiPV <= prev.options.MultiPV, `${elo}: ít ứng viên hơn`);
+      assert.ok(p.options.MultiPV >= 5, 'nhiều ứng viên hơn mức 1320 (4)');
+    }
+    prev = p;
   }
 });
 

@@ -152,3 +152,39 @@ test('micro bị từ chối quyền → cảnh báo và báo bằng giọng', a
   assert.ok(errs.every((e) => e.includes('not-allowed')), errs.join('\n'));
   errs.length = 0;
 });
+
+test('Safari iOS: micro tự mở bị từ chối → im lặng, chạm để trả lời vẫn được', async () => {
+  const page = await open({
+    extraInit: () => {
+      // Giả lập iOS: chỉ cho mở micro khi do người chơi chạm (không phải tự mở).
+      const Orig = window.SpeechRecognition;
+      class IosLike extends Orig {
+        start() {
+          const last = window.__blindfold?.getMicStarts().at(-1);
+          if (last?.auto) {
+            window.__fakeRecognition.starts.push({ at: performance.now(), state: window.__blindfold.getState(), ttsBusy: false, denied: true });
+            setTimeout(() => { this.onerror?.({ error: 'not-allowed' }); this.onend?.(); }, 0);
+            return;
+          }
+          super.start();
+        }
+      }
+      Object.defineProperty(window, 'SpeechRecognition', { value: IosLike, configurable: true });
+      Object.defineProperty(window, 'webkitSpeechRecognition', { value: IosLike, configurable: true });
+    },
+  });
+  await startGame(page, { confirm: true });
+  await say(page, 'e4');
+  await waitSpoken(page, /^Tốt e 4\. Đúng không\?$/);
+  await page.waitForFunction(() => window.__fakeRecognition.starts.some((s) => s.denied));
+  await waitPlayerReady(page);
+  assert.equal((await state(page)).phase, 'confirm');
+  assert.match(await page.textContent('#mic-hint'), /Chạm để trả lời/);
+  await say(page, 'đúng');
+  await waitEngineMoved(page, 1);
+  assert.equal((await spoken(page)).some((t) => t.includes('Không dùng được micro')), false);
+  assert.equal(await page.textContent('#warnings'), '');
+  const errs = current().errors;
+  assert.ok(errs.every((e) => e.includes('not-allowed')), errs.join('\n'));
+  errs.length = 0;
+});

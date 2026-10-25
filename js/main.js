@@ -61,6 +61,7 @@ let clockTimer = null;
 let lastPersist = 0;
 const forcedEngineMoves = [];
 const micStarts = [];
+let lastStartWasAuto = false; // micro tự mở (không do chạm): iOS có thể từ chối, không coi là mất quyền
 
 const recognizer = createRecognizer({
   lang: settings.speechLang,
@@ -171,10 +172,11 @@ function persist() {
 
 // ---------------------------------------------------------------- micro
 
-function startListening() {
+function startListening({ auto = false } = {}) {
   if (!canListen()) return false;
   if (!recognizer.isSupported()) return false;
-  micStarts.push({ phase: phase(), turn: G.game.turn(), speaking: tts.speaking });
+  lastStartWasAuto = auto;
+  micStarts.push({ phase: phase(), turn: G.game.turn(), speaking: tts.speaking, auto });
   cues.play('listen');
   return recognizer.start();
 }
@@ -188,7 +190,7 @@ function maybeAutoListen() {
     const p = phase();
     if (p === 'peek' && (!G.peek || G.peek.endsAt - performance.now() < 1500)) return;
     const continuous = settings.listenMode === 'continuous' && (p === 'player' || p === 'paused');
-    if (p === 'confirm' || p === 'peek' || continuous) startListening();
+    if (p === 'confirm' || p === 'peek' || continuous) startListening({ auto: true });
   }, timing.postTtsMs);
 }
 
@@ -254,6 +256,11 @@ async function handleRecognitionError(code) {
   store.set({ listening: false });
   if (!G || G.over) return;
   const p = phase();
+  const permissionLike = ['not-allowed', 'service-not-allowed', 'start-failed'].includes(code);
+  if (lastStartWasAuto && permissionLike) {
+    // Safari iOS chỉ cho mở micro trong cú chạm: im lặng, người chơi chạm để nói/trả lời.
+    return;
+  }
   await withBusy(async () => {
     if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') {
       showWarning(VI.setup.micDenied);
@@ -696,11 +703,11 @@ async function startGame({ saved = null } = {}) {
       await engineTurn();
       return;
     }
-    clock?.start(playerColor);
     setPhase('player');
     updateView();
     if (saved && G.lastEngineMoveText) await say(VI.say.lastEngineMove(G.lastEngineMoveText));
     await say(saved ? VI.say.yourTurn : VI.say.tapToSpeak);
+    if (alive(token)) clock?.start(playerColor); // giờ bắt đầu chạy sau lời hướng dẫn
   });
   if (alive(token) && !engineReady) {
     await sayError(VI.say.engineError);

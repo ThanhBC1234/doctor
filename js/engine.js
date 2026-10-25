@@ -54,14 +54,21 @@ export function parseInfo(line) {
 }
 
 /**
- * Chọn nước cho mức thấp: thỉnh thoảng lấy nước kém hơn một chút để máy không chơi "quá chuẩn".
- * @param {{move:string, score:number}[]} candidates đã sắp theo multipv (tốt nhất trước)
+ * Chọn nước cho mức thấp: với xác suất `probability`, thay nước Stockfish đã chọn bằng một ứng viên
+ * KÉM HƠN nó (điểm thấp hơn), nhưng không kém nước tốt nhất quá `windowCp`.
+ * Không bao giờ thay bằng nước tốt hơn, nên chỉ có thể làm máy yếu đi.
+ * @param {{move:string, score:number}[]} candidates các dòng MultiPV
+ * @param {string|null} engineMove nước bestmove Stockfish trả về
  */
-export function pickRandomized(candidates, randomize, random = Math.random) {
-  if (!candidates.length) return null;
-  const best = candidates[0];
-  if (!randomize || candidates.length < 2 || random() >= randomize.probability) return best.move;
-  const pool = candidates.filter((c) => c.score >= best.score - randomize.windowCp);
+export function pickRandomized(candidates, randomize, random = Math.random, engineMove = null) {
+  const sorted = [...candidates].sort((a, b) => b.score - a.score);
+  const fallback = engineMove || sorted[0]?.move || null;
+  if (!randomize || sorted.length < 2 || random() >= randomize.probability) return fallback;
+  const picked = sorted.find((c) => c.move === engineMove);
+  const ceiling = picked ? picked.score : sorted[0].score;
+  const floor = sorted[0].score - randomize.windowCp;
+  const pool = sorted.filter((c) => c.score < ceiling && c.score >= floor);
+  if (!pool.length) return fallback;
   return pool[Math.floor(random() * pool.length)].move;
 }
 
@@ -175,10 +182,7 @@ export function createEngine(transport, opts = {}) {
       return enqueue(async () => {
         const { best, candidates } = await search(fen, params.goCommand);
         if (!best) return null;
-        if (params.randomize) {
-          const picked = pickRandomized(candidates, params.randomize, random);
-          return picked || best;
-        }
+        if (params.randomize) return pickRandomized(candidates, params.randomize, random, best) || best;
         return best;
       });
     },

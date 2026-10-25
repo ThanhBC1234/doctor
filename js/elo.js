@@ -1,26 +1,34 @@
 // Ánh xạ Elo hiển thị → tham số Stockfish. Module thuần, không đụng trình duyệt.
 //
 // Stockfish 19 lite chỉ nhận UCI_Elo từ 1320. Dưới mức đó ta mô phỏng bằng
-// Skill Level thấp + giới hạn độ sâu + chọn ngẫu nhiên trong vài nước gần tốt nhất.
+// Skill Level 0 + thỉnh thoảng thay bằng một nước kém hơn (xem ELO_LOW_TABLE).
 
 export const ELO_MIN = 1000;
 export const ELO_MAX = 2500;
 export const ELO_STEP = 50;
 export const ENGINE_ELO_MIN = 1320;
 
-/** Bảng mức thấp (dưới 1320). Tinh chỉnh tại đây. */
+/**
+ * Bảng mức thấp (dưới 1320). Tinh chỉnh tại đây.
+ *
+ * Stockfish coi UCI_Elo 1320 ≈ Skill Level 0 (chọn ngẫu nhiên có trọng số trong ít nhất 4 nước đầu).
+ * Mức thấp hơn được làm yếu thêm theo hai cách, đều chỉ có thể làm nước đi tệ đi:
+ *  - multiPV lớn hơn: Skill 0 chọn trong nhiều ứng viên hơn;
+ *  - với xác suất `probability`, thay nước Stockfish chọn bằng một nước KÉM HƠN nó,
+ *    nhưng không kém nước tốt nhất quá `windowCp` (để không đi nước vô lý).
+ */
 export const ELO_LOW_TABLE = [
-  { elo: 1000, skill: 0, depth: 1 },
-  { elo: 1050, skill: 0, depth: 2 },
-  { elo: 1100, skill: 1, depth: 2 },
-  { elo: 1150, skill: 2, depth: 3 },
-  { elo: 1200, skill: 3, depth: 3 },
-  { elo: 1250, skill: 4, depth: 4 },
-  { elo: 1300, skill: 5, depth: 4 },
+  { elo: 1000, multiPV: 8, probability: 0.5, windowCp: 400 },
+  { elo: 1050, multiPV: 8, probability: 0.43, windowCp: 350 },
+  { elo: 1100, multiPV: 7, probability: 0.36, windowCp: 300 },
+  { elo: 1150, multiPV: 7, probability: 0.3, windowCp: 250 },
+  { elo: 1200, multiPV: 6, probability: 0.24, windowCp: 200 },
+  { elo: 1250, multiPV: 6, probability: 0.18, windowCp: 150 },
+  { elo: 1300, multiPV: 5, probability: 0.12, windowCp: 120 },
 ];
 
-/** Ngẫu nhiên hóa ở mức thấp: xác suất bỏ nước tốt nhất, và cửa sổ điểm (centipawn). */
-export const LOW_RANDOMIZE = { probability: 0.35, windowCp: 80, multiPV: 3 };
+/** Độ sâu tìm kiếm ở mức thấp (Skill 0 chọn nước ở độ sâu 1; độ sâu này chỉ để chấm điểm ứng viên). */
+export const LOW_DEPTH = 3;
 
 /** Đưa Elo về khoảng hợp lệ và làm tròn theo bước 50. */
 export function clampElo(elo) {
@@ -45,11 +53,11 @@ export function eloToEngineParams(elo) {
       elo: e,
       options: {
         UCI_LimitStrength: false,
-        'Skill Level': row.skill,
-        MultiPV: LOW_RANDOMIZE.multiPV,
+        'Skill Level': 0,
+        MultiPV: row.multiPV,
       },
-      goCommand: `go depth ${row.depth}`,
-      randomize: { probability: LOW_RANDOMIZE.probability, windowCp: LOW_RANDOMIZE.windowCp },
+      goCommand: `go depth ${LOW_DEPTH}`,
+      randomize: { probability: row.probability, windowCp: row.windowCp },
       approximate: true,
     };
   }
