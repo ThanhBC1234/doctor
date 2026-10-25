@@ -1,0 +1,14 @@
+{
+  "name": "co-mu",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chơi cờ mù bằng giọng nói với Stockfish, chạy hoàn toàn trên trình duyệt",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.js\"",
+    "test:e2e": "node --test --test-concurrency=1 \"e2e/**/*.test.js\"",
+    "test:all": "npm test && npm run test:e2e",
+    "serve": "python3 -m http.server 8080"
+  },
+  "license": "GPL-3.0-or-later"
+}
