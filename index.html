@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="color-scheme" content="dark">
+  <title></title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <div id="live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- ===== Màn hình cài đặt ===== -->
+  <section id="screen-setup" class="screen" data-screen="setup">
+    <header class="setup-header">
+      <img src="assets/icon.svg" alt="" class="logo" width="56" height="56">
+      <div>
+        <h1 data-i18n="appTitle"></h1>
+        <p class="subtitle" data-i18n="appSubtitle"></p>
+      </div>
+    </header>
+
+    <div id="warnings" class="warnings" role="alert"></div>
+
+    <div id="resume-banner" class="banner" hidden>
+      <p data-i18n="setup.resumeBanner"></p>
+      <div class="row">
+        <button type="button" id="btn-resume" class="btn primary" data-i18n="setup.resume"></button>
+        <button type="button" id="btn-discard" class="btn" data-i18n="setup.discard"></button>
+      </div>
+    </div>
+
+    <form id="setup-form" class="setup-form" novalidate>
+      <fieldset class="card">
+        <legend data-i18n="setup.strength"></legend>
+        <div class="elo-row">
+          <output id="elo-value" for="elo" class="elo-value">1400</output>
+          <span id="elo-label" class="elo-label"></span>
+        </div>
+        <input type="range" id="elo" name="elo" min="1000" max="2500" step="50" value="1400">
+        <p id="elo-note" class="note" data-i18n="setup.strengthNote" hidden></p>
+      </fieldset>
+
+      <fieldset class="card">
+        <legend data-i18n="setup.color"></legend>
+        <div class="segmented" role="radiogroup">
+          <label><input type="radio" name="color" value="w"><span data-i18n="setup.colorWhite"></span></label>
+          <label><input type="radio" name="color" value="b"><span data-i18n="setup.colorBlack"></span></label>
+          <label><input type="radio" name="color" value="random"><span data-i18n="setup.colorRandom"></span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="card">
+        <legend data-i18n="setup.clock"></legend>
+        <select id="timeControl" name="timeControl"></select>
+        <div id="custom-clock" class="row" hidden>
+          <label class="field"><span data-i18n="setup.clockMinutes"></span>
+            <input type="number" id="customMinutes" name="customMinutes" min="1" max="180" step="1" inputmode="numeric"></label>
+          <label class="field"><span data-i18n="setup.clockIncrement"></span>
+            <input type="number" id="customIncrement" name="customIncrement" min="0" max="60" step="1" inputmode="numeric"></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="card">
+        <legend data-i18n="setup.speechLang"></legend>
+        <select id="speechLang" name="speechLang">
+          <option value="vi-VN" data-i18n="setup.langVi"></option>
+          <option value="en-US" data-i18n="setup.langEn"></option>
+        </select>
+
+        <label class="switch"><input type="checkbox" id="confirm" name="confirm"><span data-i18n="setup.confirm"></span></label>
+        <p class="note" data-i18n="setup.confirmHint"></p>
+        <label class="switch"><input type="checkbox" id="announce" name="announce"><span data-i18n="setup.announce"></span></label>
+        <label class="switch"><input type="checkbox" id="clockWarnings" name="clockWarnings"><span data-i18n="setup.clockWarnings"></span></label>
+
+        <label class="field"><span data-i18n="setup.fileStyle"></span>
+          <select id="fileStyle" name="fileStyle">
+            <option value="vi" data-i18n="setup.fileStyleVi"></option>
+            <option value="nato" data-i18n="setup.fileStyleNato"></option>
+          </select>
+        </label>
+
+        <label class="field"><span data-i18n="setup.rate"></span>
+          <input type="range" id="rate" name="rate" min="0.7" max="1.4" step="0.05">
+        </label>
+
+        <label class="field"><span data-i18n="setup.voice"></span>
+          <select id="voiceURI" name="voiceURI"></select>
+        </label>
+
+        <label class="field" id="listen-mode-field"><span data-i18n="setup.listenMode"></span>
+          <select id="listenMode" name="listenMode">
+            <option value="tap" data-i18n="setup.listenTap"></option>
+            <option value="continuous" data-i18n="setup.listenContinuous"></option>
+          </select>
+        </label>
+      </fieldset>
+
+      <details class="card howto">
+        <summary data-i18n="setup.howTo"></summary>
+        <ul id="howto-list"></ul>
+      </details>
+
+      <p id="engine-status" class="engine-status" data-testid="engine-status"></p>
+      <button type="submit" id="btn-start" class="btn primary big" data-testid="start" data-i18n="setup.start" disabled></button>
+    </form>
+  </section>
+
+  <!-- ===== Màn hình chơi (bàn cờ ẩn) ===== -->
+  <section id="screen-play" class="screen play" data-screen="play" hidden>
+    <div class="clocks" id="clocks">
+      <div class="clock" data-testid="clock-player"><span class="who" data-i18n="play.you"></span><span class="time"></span></div>
+      <div class="clock" data-testid="clock-engine"><span class="who" data-i18n="play.engine"></span><span class="time"></span></div>
+    </div>
+
+    <button type="button" id="talk" class="talk" data-testid="talk">
+      <span class="move-number" id="move-number"></span>
+      <span class="status" id="status" data-testid="status"></span>
+      <span class="mic-hint" id="mic-hint"></span>
+      <span class="transcript" id="transcript" data-testid="transcript"></span>
+    </button>
+
+    <div class="hints">
+      <button type="button" id="btn-peek" class="btn hint" data-testid="hint-peek">
+        <span aria-hidden="true">👁</span><span><span data-i18n="play.peekButton"></span>: <b class="count"></b></span>
+      </button>
+      <button type="button" id="btn-locate" class="btn hint" data-testid="hint-locate">
+        <span aria-hidden="true">📍</span><span><span data-i18n="play.locateButton"></span>: <b class="count"></b></span>
+      </button>
+    </div>
+
+    <div class="actions">
+      <button type="button" id="btn-repeat" class="btn" data-i18n="play.repeatButton"></button>
+      <button type="button" id="btn-resign" class="btn danger" data-i18n="play.resignButton"></button>
+      <button type="button" id="btn-settings" class="btn" aria-haspopup="dialog"><span aria-hidden="true">⚙</span><span data-i18n="play.settingsButton"></span></button>
+    </div>
+
+    <details class="type-box" id="type-box">
+      <summary data-i18n="play.typeToggle"></summary>
+      <form id="type-form" class="row">
+        <input type="text" id="type-input" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-placeholder="play.typeMove">
+        <button type="submit" class="btn primary" data-i18n="play.typeMoveSubmit"></button>
+      </form>
+    </details>
+
+    <dialog id="settings-dialog" class="dialog">
+      <form method="dialog" class="dialog-body">
+        <h2 data-i18n="play.settingsTitle"></h2>
+        <label class="switch"><input type="checkbox" id="dlg-confirm"><span data-i18n="setup.confirm"></span></label>
+        <label class="switch"><input type="checkbox" id="dlg-announce"><span data-i18n="setup.announce"></span></label>
+        <label class="switch"><input type="checkbox" id="dlg-clockWarnings"><span data-i18n="setup.clockWarnings"></span></label>
+        <label class="field"><span data-i18n="setup.fileStyle"></span>
+          <select id="dlg-fileStyle">
+            <option value="vi" data-i18n="setup.fileStyleVi"></option>
+            <option value="nato" data-i18n="setup.fileStyleNato"></option>
+          </select>
+        </label>
+        <label class="field"><span data-i18n="setup.rate"></span>
+          <input type="range" id="dlg-rate" min="0.7" max="1.4" step="0.05">
+        </label>
+        <div class="row">
+          <button type="button" id="btn-exit" class="btn" data-i18n="play.exitGame"></button>
+          <button type="submit" class="btn primary" data-i18n="play.close"></button>
+        </div>
+      </form>
+    </dialog>
+  </section>
+
+  <!-- ===== Xem bàn cờ (tháo bịt mắt) ===== -->
+  <section id="screen-peek" class="screen peek" data-screen="peek" hidden>
+    <div id="peek-board" class="board-wrap"></div>
+    <div class="peek-footer">
+      <span id="peek-countdown" class="countdown" data-testid="peek-countdown"></span>
+      <span data-i18n="play.peekHint"></span>
+    </div>
+  </section>
+
+  <!-- ===== Kết thúc ván ===== -->
+  <section id="screen-gameover" class="screen gameover" data-screen="gameover" hidden>
+    <h2 id="result-title" class="result-title" data-testid="result"></h2>
+    <p id="result-reason" class="result-reason"></p>
+    <div id="final-board" class="board-wrap"></div>
+    <div class="row nav">
+      <button type="button" class="btn" id="nav-first" data-i18n-aria="result.first">⏮</button>
+      <button type="button" class="btn" id="nav-prev" data-i18n-aria="result.prev">◀</button>
+      <button type="button" class="btn" id="nav-next" data-i18n-aria="result.next">▶</button>
+      <button type="button" class="btn" id="nav-last" data-i18n-aria="result.last">⏭</button>
+    </div>
+    <h3 data-i18n="result.moves"></h3>
+    <ol id="movelist" class="movelist" data-testid="movelist"></ol>
+    <div class="row wrap">
+      <button type="button" id="btn-download" class="btn" data-testid="download-pgn" data-i18n="result.downloadPgn"></button>
+      <button type="button" id="btn-copy" class="btn" data-i18n="result.copyPgn"></button>
+      <a id="btn-lichess" class="btn" target="_blank" rel="noopener" data-i18n="result.lichess"></a>
+    </div>
+    <div class="row wrap">
+      <button type="button" id="btn-rematch" class="btn primary" data-i18n="result.rematch"></button>
+      <button type="button" id="btn-new" class="btn" data-i18n="result.newGame"></button>
+    </div>
+  </section>
+</body>
+</html>
