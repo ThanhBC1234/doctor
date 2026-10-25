@@ -13,7 +13,7 @@ Không cần cài đặt, không cần server, không cần tài khoản. Mở t
 
 ## Chơi thế nào
 
-1. Mở trang bằng **Chrome, Edge** (máy tính hoặc Android) hoặc **Safari** (iPhone/iPad, iOS 14.5+).
+1. Mở trang bằng **Chrome, Edge** (máy tính hoặc Android) hoặc **Safari** (iPhone/iPad, **iOS 16.4 trở lên** — Stockfish cần WebAssembly SIMD).
 2. Chọn sức mạnh máy, màu quân, đồng hồ. Bấm **Bắt đầu ván đấu**, cho phép dùng micro.
 3. Bịt mắt. **Chạm bất kỳ đâu trên màn hình** (hoặc nhấn phím cách trên máy tính), nghe tiếng bíp rồi nói nước đi.
 4. Máy đọc lại: *"Mã ép 3. Đúng không?"*. Nói **"đúng"** để đi, **"sai"** để nói lại.
@@ -33,8 +33,10 @@ Không cần cài đặt, không cần server, không cần tài khoản. Mở t
 
 Mẹo:
 - Chữ cột nói kiểu Việt: **a, bê, xê, dê, e, ép, gờ, hát**, hoặc NATO: **alpha, bravo, charlie, delta, echo, foxtrot, golf, hotel**. Kiểu NATO ít bị nghe nhầm nhất.
+- Giọng miền Bắc đọc "dê" và "giê" giống nhau nên máy có thể nghe nhầm cột d thành g: nói **"đê"** hoặc **"delta"** cho cột d.
 - Nếu nhiều quân cùng đi được tới một ô, máy **không tự đoán** mà hỏi lại bạn.
-- Nói "e5" mà chỉ có quân khác (không phải tốt) đi tới được thì máy hiểu là quân đó.
+- Khi máy hỏi "Đúng không?", bạn có thể **nói luôn nước khác** thay vì "sai": máy đổi sang nước đó và hỏi lại.
+- Nói "e5" mà chỉ có quân khác (không phải tốt) đi tới được thì máy hiểu là quân đó. Nhưng nếu trong câu có **từ máy không hiểu** (ví dụ tên quân bị nghe sai) thì máy không đoán mà bảo bạn nói lại.
 
 ### Lệnh bằng giọng nói
 
@@ -51,7 +53,9 @@ Mẹo:
 | Xin thua | `xin thua` | Máy hỏi lại để chắc chắn. |
 | Trợ giúp | `trợ giúp`, `help` | |
 
-Phím tắt trên máy tính: **Space** nói, **P** xem bàn cờ, **L** vị trí quân, **R** nhắc lại, **Esc** hủy xác nhận.
+Phím tắt trên máy tính: **Space** nói, **P** xem bàn cờ, **L** vị trí quân, **R** nhắc lại, **Esc** hủy xác nhận (tổ hợp có Ctrl/Cmd/Alt để lại cho trình duyệt).
+
+Chạm vào bất kỳ chỗ nào trên màn chơi (kể cả vùng đồng hồ) đều là "chạm để nói"; chỉ các nút bấm là ngoại lệ. Ô **Gõ nước đi** ở cuối màn hình nhận cả nước đi (không cần xác nhận), lệnh, và "đúng/sai".
 
 ### Sau ván
 
@@ -110,7 +114,9 @@ PLAN.md  CLAUDE.md             đặc tả và quy ước
 
 ## Giới hạn đã biết
 
+- **Trình duyệt cũ** (Safari/iOS trước 16.4, Chrome trước 91) không chạy được Stockfish bản này (thiếu WebAssembly SIMD): trang báo rõ ngay ở màn hình đầu.
 - **Firefox** chưa hỗ trợ nhận dạng giọng nói: trang báo rõ và cho **gõ nước đi**.
+- **iPhone**: khi máy hỏi "Đúng không?", iOS có thể không cho tự mở micro; màn hình ghi "Chạm để trả lời" và bạn chạm thêm một lần. Nếu mở từ biểu tượng màn hình chính mà micro không hoạt động, hãy mở bằng Safari.
 - Nhận dạng giọng nói của Chrome thường cần **internet** (giọng nói được xử lý trên máy chủ của Google).
 - Nếu máy chưa có **giọng đọc tiếng Việt**, máy vẫn đọc nhưng phát âm lạ. Cài giọng tiếng Việt trong cài đặt hệ điều hành để nghe rõ hơn.
 - Mức **1000–1300** là ước lượng: Stockfish chỉ hỗ trợ chính thức từ 1320. Xem cách mô phỏng trong `js/elo.js`.

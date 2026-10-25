@@ -2,7 +2,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { createEngine, parseInfo, pickRandomized } from '../js/engine.js';
+import { createEngine, parseInfo, pickRandomized, wasmSimdSupported } from '../js/engine.js';
 import { Chess } from '../vendor/chess.js/chess.js';
 import { rng } from './helpers.js';
 
@@ -99,6 +99,8 @@ test('parseInfo', () => {
   const m = parseInfo('info depth 5 multipv 1 score mate 2 nodes 10 pv a1a8');
   assert.ok(m.score > 99000);
   assert.equal(parseInfo('info string hello'), null);
+  assert.equal(parseInfo('info depth 8 multipv 1 score cp 30 upperbound nodes 5 pv e2e4'), null, 'điểm chặn không dùng');
+  assert.equal(parseInfo('info depth 8 multipv 1 score cp 30 lowerbound nodes 5 pv e2e4'), null);
 });
 
 test('pickRandomized: chỉ thay bằng nước kém hơn nước Stockfish chọn, trong cửa sổ điểm', () => {
@@ -112,4 +114,12 @@ test('pickRandomized: chỉ thay bằng nước kém hơn nước Stockfish ch�
   assert.equal(pickRandomized(cands, null, rand, 'b'), 'b');
   assert.equal(pickRandomized(cands, null), 'a');
   assert.equal(pickRandomized([], always), null);
+  assert.equal(pickRandomized(cands, always, rand, 'zz'), 'zz', 'nước máy chọn không có trong danh sách: giữ nguyên');
+});
+
+test('phát hiện WebAssembly SIMD (Node có) và không ném lỗi khi thiếu WebAssembly', () => {
+  assert.equal(wasmSimdSupported(), true);
+  const saved = globalThis.WebAssembly;
+  globalThis.WebAssembly = undefined;
+  try { assert.equal(wasmSimdSupported(), false); } finally { globalThis.WebAssembly = saved; }
 });

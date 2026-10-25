@@ -8,12 +8,17 @@ let instances;
 
 class FakeRec {
   constructor() { instances.push(this); this.started = false; this.stopped = false; this.abortedCalls = 0; }
-  start() { this.started = true; }
+  start() { this.started = true; this.onstart?.(); }
   stop() { this.stopped = true; }
   abort() { this.abortedCalls++; }
   result(alts, isFinal = true) {
     const res = Object.assign(alts.map((t) => ({ transcript: t })), { isFinal });
     this.onresult?.({ results: [res] });
+  }
+  /** Nhiều đoạn đã chốt trong cùng một sự kiện (Safari/Android chia câu) */
+  results(segments) {
+    const list = segments.map(({ alts, isFinal = true }) => Object.assign(alts.map((t) => ({ transcript: t })), { isFinal }));
+    this.onresult?.({ results: list });
   }
   end() { this.onend?.(); }
   error(code) { this.onerror?.({ error: code }); }
@@ -126,6 +131,59 @@ test('start() ném lỗi (InvalidStateError) → trả false, onError start-fail
   assert.deepEqual(events, [['error', 'start-failed']]);
   globalThis.window = { SpeechRecognition: FakeRec };
   assert.equal(rec.start(), true);
+});
+
+test('kết quả / lỗi tới muộn sau khi phiên đã tự đóng bị bỏ qua, không lọt vào phiên mới', async () => {
+  const { rec, events } = make();
+  rec.start();
+  await sleep(100); // hết thời gian nghe → stop() → chờ onend
+  await sleep(100); // không có onend → tự dọn: nospeech, end
+  assert.deepEqual(events, ['start', 'nospeech', 'end']);
+  assert.equal(rec.start(), true, 'phiên mới');
+  instances[0].result(['đúng']); // phiên CŨ trả kết quả muộn
+  instances[0].error('network');
+  instances[0].end();
+  assert.deepEqual(events, ['start', 'nospeech', 'end', 'start'], 'phiên cũ không gây callback nào');
+  instances[1].result(['e4']);
+  instances[1].end();
+  assert.deepEqual(events.slice(4), [['result', ['e4']], 'end']);
+});
+
+test('nhiều đoạn đã chốt được ghép lại; phương án lấy từ đoạn cuối', () => {
+  const { rec, events } = make();
+  rec.start();
+  instances[0].results([{ alts: ['mã'] }, { alts: ['ép ba', 'ép bà'] }]);
+  instances[0].end();
+  assert.deepEqual(events, ['start', ['result', ['mã ép ba', 'mã ép bà']], 'end']);
+});
+
+test('nghe thấy nhưng không nhận ra chữ (nomatch) → onError no-match, không phải "không nghe thấy"', () => {
+  const { rec, events } = make();
+  rec.start();
+  instances[0].onnomatch?.();
+  instances[0].end();
+  assert.deepEqual(events, ['start', ['error', 'no-match'], 'end']);
+});
+
+test('onStart chỉ phát khi trình duyệt bắt đầu thu (onaudiostart), hoặc sau 500 ms nếu không báo', async () => {
+  class Silent extends FakeRec { start() { this.started = true; } }
+  globalThis.window = { SpeechRecognition: Silent };
+  const { rec, events } = make();
+  rec.start();
+  assert.deepEqual(events, [], 'chưa bíp lúc gọi start()');
+  instances[0].onaudiostart?.();
+  assert.deepEqual(events, ['start']);
+  instances[0].onstart?.();
+  assert.deepEqual(events, ['start'], 'không lặp');
+  instances[0].end();
+
+  const { rec: rec2, events: ev2 } = make({ timeoutMs: 2000, startGraceMs: 100 });
+  rec2.start();
+  await sleep(40);
+  assert.deepEqual(ev2, []);
+  await sleep(120);
+  assert.deepEqual(ev2, ['start'], 'dự phòng sau startGraceMs');
+  instances[1].end();
 });
 
 test('không mở hai phiên cùng lúc; không hỗ trợ thì start() trả false', () => {

@@ -138,16 +138,18 @@ button, input, select { font: inherit; color: inherit; }
 .play {
   display: flex; flex-direction: column; gap: 12px;
   touch-action: manipulation; user-select: none; -webkit-user-select: none; /* cả màn hình là vùng chạm để nói */
-  min-height: 100vh; min-height: 100dvh;
-  padding-bottom: calc(var(--gutter) + env(safe-area-inset-bottom));
+  /* body đã chừa safe-area; trừ lại để màn chơi vừa khít, không cuộn trên iPhone có tai thỏ */
+  min-height: 100vh;
+  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
 }
-.clocks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.play > .warning { margin: 0; }
+.clocks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .clock {
-  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;
 }
 .clock .who { color: var(--muted); }
-.clock .time { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.clock .time { font-size: clamp(1.15rem, 5.5vw, 1.6rem); font-weight: 800; font-variant-numeric: tabular-nums; }
 .clock.active { border-color: var(--accent); }
 .clock.low .time { color: var(--danger); }
 .clocks.none { display: none; }
@@ -183,8 +185,11 @@ button, input, select { font: inherit; color: inherit; }
   .play[data-phase="listening"] .talk { animation: none; }
 }
 
-.hints, .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.actions { grid-template-columns: 1fr 1fr 1fr; }
+.hints, .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 360px) {
+  .hints .btn, .actions .btn { font-size: 0.92rem; padding-left: 8px; padding-right: 8px; }
+}
 .hint .count { font-size: 1.2rem; }
 .hint.used { opacity: 0.55; }
 
@@ -198,6 +203,7 @@ button, input, select { font: inherit; color: inherit; }
   width: min(560px, calc(100vw - 2 * var(--gutter))); padding: 0;
 }
 .dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+dialog:not([open]) { display: none; } /* trình duyệt không có <dialog>: không hiện form cài đặt giữa màn chơi */
 .dialog-body { padding: 18px; display: grid; gap: 4px; }
 .dialog-body h2 { margin: 0 0 6px; }
 .dialog-body .row { margin-top: 16px; justify-content: space-between; flex-wrap: wrap; }
@@ -237,7 +243,11 @@ button, input, select { font: inherit; color: inherit; }
   padding: calc(var(--gutter) + env(safe-area-inset-top)) var(--gutter) calc(var(--gutter) + env(safe-area-inset-bottom));
   cursor: pointer;
 }
-.peek .board-wrap { max-width: min(100%, 80vh); max-width: min(100%, 80dvh); }
+.peek .board-wrap {
+  /* chừa chỗ cho dòng đếm ngược (~130px) để bàn cờ không bị cắt trên điện thoại nằm ngang */
+  max-width: min(100%, calc(100vh - 130px));
+  max-width: min(100%, 80dvh, calc(100dvh - 130px));
+}
 .peek-footer { display: flex; gap: 16px; align-items: center; color: var(--muted); }
 .countdown { font-size: 3rem; font-weight: 900; color: var(--text); font-variant-numeric: tabular-nums; min-width: 2ch; text-align: center; }
 

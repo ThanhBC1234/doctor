@@ -44,6 +44,10 @@ export async function openApp(suite, opts = {}) {
   await page.addInitScript(installFakes, opts.fakes || {});
   if (opts.extraInit) await page.addInitScript(opts.extraInit);
   await page.goto(`${suite.server.url}/${opts.query ?? '?test=1'}`);
+  if (opts.waitEngine === false) {
+    await page.waitForFunction(() => !!window.__blindfold);
+    return { page, errors, context };
+  }
   await page.waitForFunction(() => window.__blindfold?.getState().engineReady === true, null, { timeout: 30000 });
   // Test chạy nhanh: bỏ độ trễ giả lập
   await page.evaluate((t) => window.__blindfold.setTiming(t), {

@@ -97,3 +97,16 @@ test('TimeControl PGN', () => {
   assert.equal(pgnTimeControl(15, 10), '900+10');
   assert.equal(pgnTimeControl(0, 0), '-');
 });
+
+test('bấm đồng hồ khi đã hết giờ → thua giờ ngay, không cộng giây', () => {
+  const ft = fakeTime();
+  const c = createClock({ baseMs: 1000, incrementMs: 5000, now: ft.now });
+  c.start('w');
+  ft.advance(1300);
+  c.press();
+  assert.equal(c.flagged, 'w');
+  assert.equal(c.time('w'), 0);
+  assert.equal(c.active, 'w');
+  assert.equal(c.tick(), 'w', 'tick báo hết giờ một lần');
+  assert.equal(c.tick(), null);
+});

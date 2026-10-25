@@ -4,11 +4,65 @@ import { VI } from '../i18n/vi.js';
 import { renderBoard } from './board.js';
 
 const $ = (id) => document.getElementById(id);
+const PGN_MIME = 'application/x-chess-pgn';
+
+/** Sao chép: clipboard API, không có thì execCommand('copy'); trả về true nếu thành công. */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (err) {
+    console.error('[gameover] clipboard API thất bại, thử cách cũ', err);
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand && document.execCommand('copy');
+    ta.remove();
+    return !!ok;
+  } catch (err) {
+    console.error('[gameover] không sao chép được', err);
+    return false;
+  }
+}
+
+/** Tải PGN: trên điện thoại ưu tiên bảng chia sẻ (tải file từ web app iOS không ổn định). */
+async function savePgn(pgn, fileName) {
+  try {
+    if (navigator.canShare && typeof File === 'function') {
+      const file = new File([pgn], fileName, { type: PGN_MIME });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: fileName });
+        return;
+      }
+    }
+  } catch (err) {
+    if (err?.name === 'AbortError') return; // người dùng đóng bảng chia sẻ
+    console.error('[gameover] chia sẻ thất bại, tải xuống thay thế', err);
+  }
+  const blob = new Blob([pgn], { type: PGN_MIME });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Firefox / Safari chỉ lấy dữ liệu sau khi người dùng xác nhận hộp thoại: giữ URL đủ lâu.
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
 
 /**
  * @param {{ title:string, reason:string, history:object[], fenAt:(ply:number)=>string, orientation:'w'|'b',
  *   pgn:string, lichessUrl:string, fileName:string }} data
- * @param {{ onRematch:()=>void, onNew:()=>void }} handlers
+ * @param {{ onRematch:()=>void, onNew:()=>void, onCopyFailed?:()=>void }} handlers
  */
 export function showGameover(data, handlers) {
   $('result-title').textContent = data.title;
@@ -21,6 +75,10 @@ export function showGameover(data, handlers) {
     const last = ply > 0 ? data.history[ply - 1] : null;
     renderBoard($('final-board'), data.fenAt(ply), { orientation: data.orientation, lastMove: last });
     for (const b of list.querySelectorAll('button')) b.classList.toggle('current', Number(b.dataset.ply) === ply);
+    const cur = list.querySelector('button.current');
+    if (cur) cur.scrollIntoView?.({ block: 'nearest' });
+    else list.scrollTop = 0; // về đầu ván: không có nước nào được tô
+
     $('nav-first').disabled = ply === 0;
     $('nav-prev').disabled = ply === 0;
     $('nav-next').disabled = ply === total;
@@ -56,24 +114,13 @@ export function showGameover(data, handlers) {
   $('nav-next').onclick = () => { ply = Math.min(total, ply + 1); draw(); };
   $('nav-last').onclick = () => { ply = total; draw(); };
 
-  $('btn-download').onclick = () => {
-    const blob = new Blob([data.pgn], { type: 'application/x-chess-pgn' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = data.fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  };
-  $('btn-copy').onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(data.pgn);
-      $('btn-copy').textContent = VI.result.copied;
-      setTimeout(() => { $('btn-copy').textContent = VI.result.copyPgn; }, 1500);
-    } catch (err) {
-      console.error('[gameover] không sao chép được', err);
-    }
+  $('btn-download').onclick = () => { void savePgn(data.pgn, data.fileName); };
+  const copyBtn = $('btn-copy');
+  copyBtn.onclick = async () => {
+    const ok = await copyText(data.pgn);
+    copyBtn.textContent = ok ? VI.result.copied : VI.result.copyFailed;
+    if (!ok) handlers.onCopyFailed?.();
+    setTimeout(() => { copyBtn.textContent = VI.result.copyPgn; }, 2500);
   };
   $('btn-lichess').href = data.lichessUrl;
   $('btn-rematch').onclick = handlers.onRematch;

@@ -9,7 +9,7 @@
 import { VI } from './i18n/vi.js';
 import { createStore } from './state.js';
 import { createGame } from './game.js';
-import { createEngine, createWorkerTransport } from './engine.js';
+import { createEngine, createWorkerTransport, wasmSimdSupported } from './engine.js';
 import { createClock, TIME_CONTROLS, pgnTimeControl } from './clock.js';
 import { createHints } from './hints.js';
 import { clampElo } from './elo.js';
@@ -68,7 +68,11 @@ let lastStartWasAuto = false; // micro tự mở (không do chạm): iOS có th�
 const recognizer = createRecognizer({
   lang: settings.speechLang,
   timeoutMs: timing.listenTimeoutMs,
-  onStart: () => store.set({ listening: true }),
+  // Bíp "đang nghe" đúng lúc trình duyệt bắt đầu thu âm (không phải lúc gọi start()), để không mất âm tiết đầu.
+  onStart: () => {
+    store.set({ listening: true });
+    if (!(lastStartWasAuto && isContinuousAuto())) cues.play('listen');
+  },
   onResult: (alts) => { void handleSpeech(alts); },
   onNoSpeech: () => { void handleNoSpeech(); },
   onError: (code) => { void handleRecognitionError(code); },
@@ -182,8 +186,12 @@ function startListening({ auto = false } = {}) {
   if (!recognizer.start()) return false; // không bíp khi micro không mở được (phiên cũ chưa đóng xong)
   if (phase() !== 'confirm') store.set({ transcript: '' }); // khi chờ xác nhận thì giữ câu vừa nghe
   micStarts.push({ phase: phase(), turn: G.game.turn(), speaking: tts.speaking, auto });
-  cues.play('listen');
   return true;
+}
+
+/** Đang ở chế độ nghe liên tục và micro tự mở lại trong lúc người chơi suy nghĩ (không phải chờ "đúng/sai"). */
+function isContinuousAuto() {
+  return settings.listenMode === 'continuous' && (phase() === 'player' || phase() === 'paused');
 }
 
 /** Tự mở micro khi đang chờ trả lời (xác nhận, xem bàn cờ) hoặc ở chế độ nghe liên tục. */
@@ -248,7 +256,7 @@ async function handleNoSpeech() {
   if (!G || G.over) return;
   const p = phase();
   if (p === 'peek') { maybeAutoListen(); return; }
-  cues.play('done');
+  if (!(lastStartWasAuto && isContinuousAuto())) cues.play('done');
   if (p === 'confirm') {
     await withBusy(() => onConfirmAnswer({ type: 'unknown' }));
   } else if (settings.listenMode !== 'continuous' && p === 'player') {
@@ -272,6 +280,11 @@ async function handleRecognitionError(code) {
       await sayError(VI.say.micError);
     } else if (code === 'network') {
       await sayError(VI.say.networkError);
+    } else if (code === 'start-failed') {
+      await sayError(VI.say.micError); // người chơi vừa chạm mà micro không mở: phải có tiếng báo
+    } else if (code === 'no-match') {
+      store.set({ listening: false });
+      await sayError(VI.say.notUnderstood); // nghe thấy tiếng nhưng không nhận ra chữ
     }
     if (p === 'confirm') await onConfirmAnswer({ type: 'unknown' });
   });
@@ -288,7 +301,14 @@ function interpretConfirm(alts) {
   const r = parseUtterance(alts, { mode: 'confirm' });
   const pending = G?.pendingConfirm;
   if (!pending || pending.kind !== 'move') return r;
-  const m = parseUtterance(alts, { mode: 'move', legalMoves: G.game.legalMoves() });
+  // Một nước đi chỉ được lấy từ phương án nhận dạng xếp trước (hoặc bằng) phương án chứa "đúng/sai":
+  // "đúng" ở phương án 1 không bị phương án 2 ("dê bốn") đè thành nước khác.
+  let candidates = alts;
+  if (r.type === 'command') {
+    const idx = alts.indexOf(r.transcript);
+    candidates = idx >= 0 ? alts.slice(0, idx + 1) : alts.slice(0, 1);
+  }
+  const m = parseUtterance(candidates, { mode: 'move', legalMoves: G.game.legalMoves() });
   if (m.type !== 'move' || m.matches.length !== 1) return r;
   const move = m.matches[0];
   const same = move.from === pending.move.from && move.to === pending.move.to && move.promotion === pending.move.promotion;
@@ -340,7 +360,8 @@ async function onConfirmAnswer(r) {
     if (pending.kind === 'move') await commitPlayerMove(pending.move);
     else if (pending.kind === 'resign') {
       S.game.resign(S.playerColor);
-      await endGame();
+      S.clock?.stop();
+      await endGame(S);
     }
     return;
   }
@@ -364,11 +385,21 @@ async function commitPlayerMove(move) {
     return;
   }
   S.lastPlayerMoveText = speakMove(played, speakOpts());
-  S.clock?.press();
+  let over = S.game.status().over;
+  if (over) {
+    S.clock?.stop();
+  } else {
+    S.clock?.press();
+    if (S.clock?.flagged === S.playerColor) {
+      // Đi nước khi đồng hồ đã về 0 (gõ tay đúng lúc hết giờ): thua giờ
+      S.game.timeout(S.playerColor);
+      over = true;
+    }
+  }
   persist();
   updateView();
-  if (S.game.status().over) {
-    await endGame();
+  if (over) {
+    await endGame(S);
     return;
   }
   await engineTurn();
@@ -387,7 +418,7 @@ async function engineTurn() {
     uci = forcedEngineMoves.length ? forcedEngineMoves.shift() : await engineBestMove(S.game.fen());
   } catch (err) {
     console.error('[engine] không lấy được nước đi', err);
-    if (alive(token)) await sayError(VI.say.engineError);
+    if (alive(token)) await abandonForEngineError(S);
     return;
   }
   const wait = timing.engineDelayMs - (performance.now() - t0);
@@ -396,18 +427,39 @@ async function engineTurn() {
   const move = uci ? S.game.move(uci) : null;
   if (!move) {
     console.error('[engine] nước không hợp lệ', uci, S.game.fen());
-    await sayError(VI.say.engineError);
+    await abandonForEngineError(S);
     return;
   }
-  S.clock?.press();
   S.lastEngineMoveText = speakMove(move, speakOpts());
-  persist();
   const over = S.game.status().over;
+  if (over) {
+    S.clock?.stop(); // ván đã kết thúc: không để giờ người chơi chạy (và hết giờ) trong lúc đọc nước cuối
+  } else {
+    // Máy bấm đồng hồ (nhận giây cộng), nhưng giờ của người chơi chỉ chạy sau khi nghe xong nước của máy.
+    S.clock?.press();
+    S.clock?.pause();
+  }
+  persist();
   setPhase(over ? 'over' : 'player');
   updateView();
   await say(VI.say.engineMove(S.lastEngineMoveText));
   if (!alive(token)) return;
-  if (over) await endGame();
+  if (over) {
+    await endGame(S);
+    return;
+  }
+  S.clock?.resume();
+  updateView();
+}
+
+/**
+ * Máy không đi được (worker hỏng cả sau khi khởi động lại): không để ván đứng im ở "MÁY ĐANG NGHĨ…".
+ * Ván đã được lưu sau nước của người chơi, nên quay về màn hình chính để tải lại / tiếp tục sau.
+ */
+async function abandonForEngineError(S) {
+  S.clock?.stop();
+  await sayError(VI.say.engineError);
+  if (G === S && !S.over) toSetup();
 }
 
 /** Hỏi máy; nếu engine hỏng (worker chết, không phản hồi) thì khởi động lại một lần rồi hỏi lại. */
@@ -428,8 +480,7 @@ async function engineBestMove(fen) {
 
 async function restartEngine() {
   try { engine?.terminate(); } catch { /* bỏ qua */ }
-  createAndInitEngine();
-  await engineReadyPromise;
+  await createAndInitEngine();
   if (G && !G.over) {
     await engine.setStrength(G.elo);
     await engine.newGame();
@@ -536,9 +587,10 @@ async function offerDraw() {
   setPhase('player');
   // Điểm theo góc nhìn người chơi (đang tới lượt). Máy đồng ý khi không hơn quá 1,5 tốt.
   if (score !== null && -score <= 150) {
-    await say(VI.say.drawAccepted);
     S.game.agreeDraw();
-    await endGame();
+    S.clock?.stop();
+    await say(VI.say.drawAccepted);
+    await endGame(S);
     return;
   }
   await say(VI.say.drawDeclined);
@@ -600,7 +652,7 @@ function onClockTick() {
   store.set({ clock: clockView() });
   if (flagged) {
     S.game.timeout(flagged);
-    void endGame();
+    void endGame(S);
     return;
   }
   if (performance.now() - lastPersist > 5000) persist();
@@ -608,13 +660,15 @@ function onClockTick() {
   const t = S.clock.time(S.playerColor);
   const w = S.warned;
   for (const k of Object.keys(w)) {
-    // Chỉ cảnh báo lại khi giờ tăng đáng kể (ví dụ nhiều lần cộng giây), không lặp "còn một phút" mỗi nước.
-    const rearm = Number(k) >= 30000 ? 60000 : 15000;
+    // "Còn một phút" / bíp 30 giây chỉ lặp lại khi giờ tăng nhiều (không phải sau mỗi lần cộng giây);
+    // bíp từng giây ở 10 giây cuối thì lặp lại ngay khi giờ vượt mốc đó.
+    const rearm = Number(k) >= 30000 ? 60000 : 1000;
     if (t > Number(k) + rearm) delete w[k];
   }
   if (t <= 60000 && !w[60000] && S.clock.baseMs > 60000) {
     w[60000] = true;
-    if (!tts.speaking && !recognizer.listening && busy === 0) void say(VI.say.oneMinute);
+    // Sau câu cảnh báo, mở lại micro nếu đang chờ "đúng/sai" (lịch mở micro trước đó có thể đã bỏ qua vì TTS đang đọc).
+    if (!tts.speaking && !recognizer.listening && busy === 0) void say(VI.say.oneMinute).then(maybeAutoListen);
     else cues.play('double');
   }
   if (t <= 30000 && !w[30000]) {
@@ -650,9 +704,9 @@ function describeResult(status, player) {
   return { title: R.draw, reason, speech: R.say[status.reason] || R.draw };
 }
 
-async function endGame() {
-  const S = G;
-  if (!S || S.over) return;
+/** @param {object} S ván cần kết thúc (mặc định ván hiện tại); ván cũ đã bị thay thì bỏ qua */
+async function endGame(S = G) {
+  if (!S || S.over || S !== G) return;
   S.over = true;
   clearPeek(S);
   recognizer.abort();
@@ -683,6 +737,7 @@ async function endGame() {
     lichessUrl: lichessAnalysisUrl(pgn),
     fileName: pgnFileName(),
   }, {
+    onCopyFailed: () => cues.play('error'),
     onRematch: () => {
       tts.unlock();
       cues.unlock();
@@ -760,6 +815,7 @@ async function startGame({ saved = null, preset = null } = {}) {
 
   clearBoard($('peek-board'));
   clearBoard($('final-board'));
+  $('play-alert').hidden = true;
   showScreen('play');
   store.set({ screen: 'play', transcript: '' });
   setPhase('idle');
@@ -769,11 +825,15 @@ async function startGame({ saved = null, preset = null } = {}) {
   tts.setVoice(settings.voiceURI);
   recognizer.setLang(settings.speechLang);
 
+  let engineFailed = false;
   await withBusy(async () => {
-    await engineReadyPromise;
-    if (!engineReady) throw new Error('engine chưa sẵn sàng');
-    await engine.setStrength(elo);
-    await engine.newGame();
+    try {
+      await prepareEngine(elo);
+    } catch (err) {
+      console.error('[engine] không sẵn sàng cho ván mới', err);
+      engineFailed = true;
+      return;
+    }
     if (!alive(token)) return;
     persist();
     const colorName = VI.colors[playerColor];
@@ -791,11 +851,26 @@ async function startGame({ saved = null, preset = null } = {}) {
     await say(saved ? VI.say.yourTurn : VI.say.tapToSpeak);
     if (alive(token)) clock?.start(playerColor); // giờ bắt đầu chạy sau lời hướng dẫn
   });
-  if (alive(token) && !engineReady) {
-    await sayError(VI.say.engineError);
+  if (engineFailed && alive(token)) {
+    await abandonForEngineError(G);
     return;
   }
   maybeAutoListen();
+}
+
+/** Engine sẵn sàng cho ván mới; nếu đã hỏng từ ván trước thì khởi động lại một lần. */
+async function prepareEngine(elo) {
+  await engineReadyPromise.catch(() => {});
+  if (engineReady) {
+    try {
+      await engine.setStrength(elo);
+      await engine.newGame();
+      return;
+    } catch (err) {
+      console.error('[engine] lỗi khi chuẩn bị ván, khởi động lại', err);
+    }
+  }
+  await restartEngine();
 }
 
 function toSetup() {
@@ -809,11 +884,19 @@ function toSetup() {
 
 function showWarning(text, soft = false) {
   const box = $('warnings');
-  if ([...box.children].some((c) => c.textContent === text)) return;
-  const p = document.createElement('p');
-  p.className = `warning${soft ? ' soft' : ''}`;
-  p.textContent = text;
-  box.appendChild(p);
+  if (![...box.children].some((c) => c.textContent === text)) {
+    const p = document.createElement('p');
+    p.className = `warning${soft ? ' soft' : ''}`;
+    p.textContent = text;
+    box.appendChild(p);
+  }
+  // Đang trong ván thì màn hình cài đặt bị ẩn: hiện thêm ở màn chơi (người ngồi cạnh đọc được).
+  const screen = store.get().screen;
+  if (screen === 'play' || screen === 'peek') {
+    const alert = $('play-alert');
+    alert.textContent = text;
+    alert.hidden = false;
+  }
 }
 
 function refreshResumeBanner() {
@@ -867,6 +950,12 @@ function createAndInitEngine() {
 }
 
 function initEngine() {
+  if (!wasmSimdSupported()) {
+    // Bản Stockfish này cần WebAssembly SIMD (Safari/iOS 16.4+, Chrome 91+, Firefox 89+): báo đúng nguyên nhân.
+    form.setEngineStatus(VI.setup.engineUnsupported);
+    showWarning(VI.setup.engineUnsupported);
+    return;
+  }
   form.setEngineStatus(VI.setup.loadingEngine);
   createAndInitEngine().then(() => {
     form.setEngineStatus(VI.setup.engineReady);
@@ -903,7 +992,16 @@ async function handleTyped(text) {
   store.set({ transcript: text });
   recognizer.abort();
   await withBusy(async () => {
-    if (p === 'confirm') return onConfirmAnswer(interpretConfirm([text]));
+    if (p === 'confirm') {
+      // Gõ SAN (ví dụ Nf3) khi đang chờ xác nhận: coi như nói nước đó
+      const san = G.game.trySan(text);
+      if (san && G.pendingConfirm?.kind === 'move') {
+        const pm = G.pendingConfirm.move;
+        const same = san.from === pm.from && san.to === pm.to && san.promotion === pm.promotion;
+        return onConfirmAnswer(same ? { type: 'command', name: 'CONFIRM_YES' } : { type: 'replace', move: san });
+      }
+      return onConfirmAnswer(interpretConfirm([text]));
+    }
     const r = parseUtterance([text], { mode: 'move', legalMoves: G.game.legalMoves() });
     if (p === 'paused') {
       if (r.type === 'command' && ['RESUME', 'TIME', 'HELP'].includes(r.name)) return runCommand(r.name);
@@ -964,16 +1062,21 @@ function bindPlayControls() {
     saveSettings(settings);
     form.write(settings);
   });
+  // Trình duyệt không có <dialog> (Safari < 15.4): form method="dialog" sẽ gửi GET và tải lại trang → tự đóng.
+  dlg.querySelector('form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
+  });
   $('btn-exit').addEventListener('click', () => {
     persist();
-    dlg.close?.();
-    dlg.removeAttribute('open');
+    if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
     toSetup();
   });
 
   document.addEventListener('keydown', (e) => {
     const tag = e.target?.tagName;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || dlg.open) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return; // Ctrl+L, Cmd+P… là phím của trình duyệt
     const s = store.get().screen;
     if (s !== 'play' && s !== 'peek') return;
     if (e.code === 'Space') {
@@ -999,8 +1102,14 @@ function bindPlayControls() {
 function init() {
   applyI18n();
   hud = createHud();
+  store.set({ speechSupported: recognizer.isSupported() });
+  const viewport = document.querySelector('meta[name=viewport]');
+  const baseViewport = viewport?.getAttribute('content') || '';
   store.subscribe((s) => {
     if (s.screen === 'play' || s.screen === 'peek') hud.render(s);
+    // Trong ván: khóa phóng to bằng hai ngón (vỗ màn hình không được làm lệch bố cục); màn khác thì mở lại.
+    const locked = s.screen === 'play' || s.screen === 'peek';
+    viewport?.setAttribute('content', locked ? `${baseViewport}, maximum-scale=1, user-scalable=no` : baseViewport);
   });
 
   const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;

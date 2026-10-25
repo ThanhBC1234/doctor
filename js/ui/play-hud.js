@@ -44,7 +44,7 @@ export function createHud() {
       if (s.listening) hint = VI.play.listening;
       else if (s.phase === 'confirm') hint = VI.play.tapToAnswer;
       else if (s.phase === 'paused') hint = VI.play.tapToResume;
-      else if (s.phase === 'player' && !s.speaking) hint = VI.play.tapToSpeak;
+      else if (s.phase === 'player' && !s.speaking) hint = s.speechSupported === false ? VI.play.typeHint : VI.play.tapToSpeak;
       $('mic-hint').textContent = hint;
       $('transcript').textContent = s.transcript ? VI.play.heard(s.transcript) : '';
 

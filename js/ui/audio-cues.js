@@ -36,22 +36,29 @@ export function createAudioCues(opts = {}) {
     play(kind) {
       log.push(kind);
       if (opts.muted) return;
-      const c = context();
-      const steps = CUES[kind];
-      if (!c || !steps) return;
-      let t = c.currentTime + 0.01;
-      for (const s of steps) {
-        if (s.gap) { t += s.gap / 1000; continue; }
-        const osc = c.createOscillator();
-        const gain = c.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = s.f;
-        gain.gain.setValueAtTime(s.gain ?? 0.15, t);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + s.ms / 1000);
-        osc.connect(gain).connect(c.destination);
-        osc.start(t);
-        osc.stop(t + s.ms / 1000 + 0.02);
-        t += s.ms / 1000;
+      try {
+        const c = context();
+        const steps = CUES[kind];
+        if (!c || !steps) return;
+        // iOS tạm ngưng AudioContext khi micro bật; đã mở khóa bằng cú chạm trước đó nên resume() được phép.
+        if (c.state !== 'running') c.resume().catch(() => {});
+        let t = c.currentTime + 0.01;
+        for (const s of steps) {
+          if (s.gap) { t += s.gap / 1000; continue; }
+          const osc = c.createOscillator();
+          const gain = c.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = s.f;
+          gain.gain.setValueAtTime(s.gain ?? 0.15, t);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + s.ms / 1000);
+          osc.connect(gain).connect(c.destination);
+          osc.start(t);
+          osc.stop(t + s.ms / 1000 + 0.02);
+          t += s.ms / 1000;
+        }
+      } catch (err) {
+        // Tiếng bíp là phụ: lỗi Web Audio không được làm hỏng luồng xử lý câu nói
+        console.error('[audio] không phát được tiếng bíp', err);
       }
     },
   };

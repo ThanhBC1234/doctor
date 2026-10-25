@@ -20,10 +20,11 @@ const COMMANDS = [
 ];
 
 const YES_WORDS = [
-  'đúng', 'đúng rồi', 'ừ', 'ừm', 'ờ', 'ok', 'okay', 'oke', 'okê', 'yes', 'yeah', 'yep', 'yup', 'đi', 'chuẩn', 'phải',
-  'correct', 'confirm', 'có', 'được', 'rồi', 'chính xác', 'right', 'sure', 'đồng ý', 'chắc chắn',
+  'đúng', 'đúng rồi', 'ừ', 'ừm', 'ờ', 'ừa', 'vâng', 'dạ', 'ok', 'okay', 'oke', 'okê', 'yes', 'yeah', 'yep', 'yup', 'đi',
+  'chuẩn', 'phải', 'correct', 'confirm', 'có', 'được', 'rồi', 'chính xác', 'right', 'sure', 'đồng ý', 'chắc chắn',
 ];
-const NO_WORDS = ['sai', 'không', 'no', 'nope', 'hủy', 'cancel', 'lại', 'wrong', 'chưa', 'thôi', 'đừng', 'khoan', 'not'];
+// Không có 'đừng': bỏ dấu thành "dung" trùng với "đúng" và sẽ thắng nhầm thành "sai".
+const NO_WORDS = ['sai', 'không', 'no', 'nope', 'hủy', 'cancel', 'lại', 'wrong', 'chưa', 'thôi', 'khoan', 'not'];
 const DONE_WORDS = ['xong', 'đủ rồi', 'đủ', 'che lại', 'che', 'done', 'close', 'ok', 'okay', 'thôi', 'finish', 'enough'];
 
 function containsPhrase(text, phrase) {
@@ -213,14 +214,20 @@ export function matchIntent(intent, legalMoves) {
   return ms;
 }
 
+/** Ý định chỉ có ô đến (không tên quân, không ô/cột/hàng xuất phát). */
+const isBareSquare = (intent) => intent.kind === 'move' && !intent.piece && !intent.from && !intent.fromFile && !intent.fromRank;
+
 /** Phân tích một câu nói thành nước đi. */
 export function parseMoveText(raw, legalMoves) {
-  const { lexemes } = lex(raw);
+  const { lexemes, unknown } = lex(raw);
   if (!lexemes.length) return { type: 'unknown', transcript: raw };
   let firstIntent = null;
   for (const tokens of expandReadings(lexemes)) {
     const intent = parseIntent(tokens);
     if (!intent) continue;
+    // Có từ không hiểu mà câu lại chỉ còn mỗi ô đến ("tương bê ba" → "bê ba"): từ lạ rất có thể là tên quân
+    // nghe nhầm. Không được đoán thành tốt đi tới ô đó → bắt nói lại.
+    if (unknown.length && isBareSquare(intent)) continue;
     if (!firstIntent) firstIntent = intent;
     const matches = matchIntent(intent, legalMoves);
     if (matches.length) return { type: 'move', matches, intent, transcript: raw };

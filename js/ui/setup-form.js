@@ -70,7 +70,8 @@ export function bindSetupForm(opts) {
       clockWarnings: $('clockWarnings').checked,
       fileStyle: $('fileStyle').value,
       rate: Number($('rate').value) || 1,
-      voiceURI: $('voiceURI').value,
+      // Danh sách giọng tải muộn (voiceschanged): chưa có thì giữ giọng đã lưu, không ghi đè bằng ''
+      voiceURI: $('voiceURI').options.length > 1 ? $('voiceURI').value : opts.settings.voiceURI,
       listenMode: opts.coarsePointer ? 'tap' : $('listenMode').value,
     };
   }
@@ -83,6 +84,10 @@ export function bindSetupForm(opts) {
     $('custom-clock').hidden = tcSelect.value !== 'custom';
   }
 
+  // Enter trong ô số (phút, giây cộng) không được bắt đầu ván (thao tác nặng: xin micro, chuyển màn hình)
+  form.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target?.type === 'number') e.preventDefault();
+  });
   form.addEventListener('input', () => {
     refreshDerived();
     opts.settings = read();

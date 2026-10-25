@@ -35,9 +35,26 @@ export function createWorkerTransport(baseUrl = new URL('../vendor/stockfish/', 
   };
 }
 
+/**
+ * Bản Stockfish WASM đi kèm được biên dịch với SIMD: Safari/iOS < 16.4 không chạy được.
+ * Mô-đun thử (từ wasm-feature-detect): một hàm dùng lệnh v128.
+ */
+export function wasmSimdSupported() {
+  try {
+    if (typeof WebAssembly !== 'object' || typeof WebAssembly.validate !== 'function') return false;
+    return WebAssembly.validate(new Uint8Array([
+      0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11,
+    ]));
+  } catch {
+    return false;
+  }
+}
+
 /** Phân tích một dòng "info ..." của UCI. */
 export function parseInfo(line) {
   if (!line.startsWith('info ') || !line.includes(' pv ')) return null;
+  // Điểm chặn trên/dưới (khi tìm kiếm lại) không phải điểm thật của nước đi
+  if (/ (upper|lower)bound( |$)/.test(line)) return null;
   const num = (key) => {
     const m = new RegExp(` ${key} (-?\\d+)`).exec(line);
     return m ? Number(m[1]) : null;
@@ -64,8 +81,9 @@ export function pickRandomized(candidates, randomize, random = Math.random, engi
   const sorted = [...candidates].sort((a, b) => b.score - a.score);
   const fallback = engineMove || sorted[0]?.move || null;
   if (!randomize || sorted.length < 2 || random() >= randomize.probability) return fallback;
-  const picked = sorted.find((c) => c.move === engineMove);
-  const ceiling = picked ? picked.score : sorted[0].score;
+  const picked = engineMove ? sorted.find((c) => c.move === engineMove) : sorted[0];
+  if (!picked) return fallback; // không biết điểm nước máy chọn thì không so sánh được: giữ nguyên
+  const ceiling = picked.score;
   const floor = sorted[0].score - randomize.windowCp;
   const pool = sorted.filter((c) => c.score < ceiling && c.score >= floor);
   if (!pool.length) return fallback;

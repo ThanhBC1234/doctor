@@ -43,7 +43,6 @@ export const VI = {
 
   // ---- Màn hình cài đặt ----
   setup: {
-    heading: 'Cài đặt ván đấu',
     strength: 'Sức mạnh máy',
     strengthNote: 'Mức dưới 1320 là ước lượng.',
     eloLabels: {
@@ -82,6 +81,7 @@ export const VI = {
     loadingEngine: 'Đang tải Stockfish…',
     engineReady: 'Stockfish đã sẵn sàng.',
     engineFailed: 'Không tải được Stockfish. Hãy tải lại trang.',
+    engineUnsupported: 'Trình duyệt này quá cũ để chạy Stockfish (cần Safari/iOS 16.4 trở lên, Chrome 91 hoặc Firefox 89 trở lên).',
     resumeBanner: 'Bạn có một ván đang chơi dở.',
     resume: 'Tiếp tục',
     discard: 'Bỏ ván cũ',
@@ -109,6 +109,7 @@ export const VI = {
     tapToSpeak: 'Chạm bất kỳ đâu để nói',
     tapToAnswer: 'Chạm để trả lời “đúng” hoặc “sai”',
     tapToResume: 'Chạm rồi nói “tiếp tục”',
+    typeHint: 'Gõ nước đi vào ô bên dưới',
     listening: 'Đang nghe…',
     heard: (t) => `Nghe được: “${t}”`,
     you: 'Bạn',
@@ -176,7 +177,6 @@ export const VI = {
 
   // ---- Kết thúc ván ----
   result: {
-    heading: 'Kết thúc ván',
     youWin: 'Bạn thắng',
     youLose: 'Máy thắng',
     draw: 'Hòa',
@@ -208,6 +208,7 @@ export const VI = {
     downloadPgn: 'Tải PGN',
     copyPgn: 'Sao chép PGN',
     copied: 'Đã sao chép.',
+    copyFailed: 'Không sao chép được',
     lichess: 'Phân tích trên Lichess',
     newGame: 'Ván mới',
     rematch: 'Chơi lại cùng cài đặt',
@@ -218,12 +219,6 @@ export const VI = {
     pgnEvent: 'Cờ mù',
     pgnPlayer: 'Người chơi',
     pgnEngine: (elo) => `Stockfish (${elo})`,
-  },
-
-  // ---- Thông báo ngắn trên màn hình (aria-live) ----
-  status: {
-    ready: 'Sẵn sàng',
-    speaking: 'Đang đọc…',
   },
 };
 

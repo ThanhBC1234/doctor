@@ -13,6 +13,7 @@ export function createClock(opts) {
   let active = null; // bên đang chạy giờ
   let runningSince = null; // null khi dừng hoặc tạm dừng
   let flagged = null;
+  let flagReported = false; // tick() báo hết giờ đúng một lần, kể cả khi press() phát hiện trước
 
   function settle() {
     if (active && runningSince !== null) {
@@ -41,6 +42,13 @@ export function createClock(opts) {
       if (!active) return;
       settle();
       if (flagged) return;
+      if (remaining[active] <= 0) {
+        // Bấm đồng hồ khi đã hết giờ: thua giờ, không được cộng giây
+        flagged = active;
+        remaining[active] = 0;
+        runningSince = null;
+        return;
+      }
       remaining[active] += inc;
       active = active === 'w' ? 'b' : 'w';
       runningSince = now();
@@ -82,6 +90,9 @@ export function createClock(opts) {
         flagged = active;
         remaining[active] = 0;
         runningSince = null;
+      }
+      if (flagged && !flagReported) {
+        flagReported = true;
         return flagged;
       }
       return null;

@@ -28,7 +28,7 @@ const FILE_ALIASES = {
   c: ['c', 'xê', 'xi', 'si', 'see', 'sea', 'cê', 'charlie', 'sê', 'xế', 'xề', 'cee'],
   d: ['d', 'dê', 'đê', 'đe', 'di', 'dee', 'delta', 'dờ', 'đờ', 'đề', 'dề', 'dế', 'rê', 'yê'],
   e: ['e', 'ê', 'i', 'ee', 'echo', 'ế', 'ề', 'ể'],
-  f: ['f', 'ép', 'ep', 'ef', 'eff', 'foxtrot', 'phờ', 'éf', 'ếp', 'ép phờ'],
+  f: ['f', 'ép', 'ep', 'ef', 'eff', 'foxtrot', 'phờ', 'éf', 'ếp'],
   g: ['g', 'gờ', 'giê', 'gie', 'ghi', 'gi', 'gee', 'golf', 'gê', 'jee', 'ji', 'giờ'],
   h: ['h', 'hát', 'hắt', 'hat', 'aitch', 'hotel', 'hờ', 'hách', 'hét'],
 };
@@ -57,8 +57,11 @@ const TAKES_WORDS = ['ăn', 'bắt', 'lấy', 'takes', 'take', 'captures', 'capt
 const TO_WORDS = ['đến', 'tới', 'lên', 'qua', 'về', 'to', 'sang', 'xuống', 'vào', 'towards', 'goes', 'go', 'moves'];
 const PROMO_WORDS = ['phong', 'thành', 'promote', 'promotes', 'promotion', 'promoted', 'equals', 'equal', '=', 'becomes', 'biến'];
 const IGNORE_WORDS = [
-  'chiếu', 'check', 'quân', 'con', 'ô', 'nước', 'the', 'please', 'nhé', 'nha', 'à', 'ạ', 'từ', 'from',
-  'move', 'tôi', 'muốn', 'em', 'anh', 'chị', 'and', 'then', 'nào', 'đó', 'này', 'mate', 'hết', 'của', 'with',
+  'chiếu', 'check', 'quân', 'con', 'ô', 'nước', 'the', 'please', 'nhé', 'nha', 'nhá', 'à', 'ạ', 'từ', 'from',
+  'move', 'tôi', 'mình', 'muốn', 'em', 'anh', 'chị', 'and', 'then', 'nào', 'đó', 'này', 'mate', 'hết', 'của', 'with',
+  // từ đệm hay gặp trong câu nói tự nhiên
+  'ừm', 'ờ', 'ừ', 'ơ', 'thì', 'là', 'cho', 'xin', 'luôn', 'ơi', 'đây', 'ấy', 'rồi', 'vậy', 'được', 'nhỉ', 'nhở',
+  'ok', 'okay', 'không', 'um', 'uh', 'er', 'so', 'now', 'let', 'me', 'my', 'i', 'play', 'want',
 ];
 
 /** Từ có nhiều nghĩa: thứ tự mặc định, có thể đổi theo ngữ cảnh (xem reorderByContext). */
@@ -83,6 +86,7 @@ const PHRASES = [
   // Nhập thành gần
   ...[
     'nhập thành gần', 'nhập thành ngắn', 'nhập thành cánh vua', 'nhập thành bên vua', 'nhập thành nhỏ', 'nhập thành phía vua',
+    'nhập thành vua',
     'castle kingside', 'castle king side', 'castles kingside', 'castles king side', 'kingside castle', 'king side castle',
     'kingside castling', 'castling kingside', 'castle short', 'castles short', 'short castle', 'short castling',
     'castling short', 'kingside', 'king side',
@@ -90,6 +94,7 @@ const PHRASES = [
   // Nhập thành xa
   ...[
     'nhập thành xa', 'nhập thành dài', 'nhập thành cánh hậu', 'nhập thành bên hậu', 'nhập thành lớn', 'nhập thành phía hậu',
+    'nhập thành hậu',
     'castle queenside', 'castle queen side', 'castles queenside', 'castles queen side', 'queenside castle', 'queen side castle',
     'queenside castling', 'castling queenside', 'castle long', 'castles long', 'long castle', 'long castling',
     'castling long', 'queenside', 'queen side',

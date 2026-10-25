@@ -304,6 +304,19 @@ const CASES = [
   ['rê sáu', 'italian', ['d6']],
   ['yê sáu', 'italian', ['d6']],
 
+  // --- Từ lạ đứng cạnh ô đến: không đoán thành tốt (có thể là tên quân nghe nhầm) ---
+  ['tương bê ba', 'italian', 'unknown'],
+  ['mãi dê bốn', 'italian', 'unknown'],
+  ['ngự a ba', 'italian', 'unknown'],
+  ['bê năm xyz', 'italian', 'unknown'],
+  ['ờ bê năm', 'italian', ['b5']],
+  ['bê năm luôn nhé', 'italian', ['b5']],
+  ['tương ăn e4', 'italian', 'unknown'],
+  ['xyz mã f6', 'italian', ['Nf6']],
+  ['xyz g8 f6', 'italian', ['Nf6']],
+  ['nhập thành vua', 'castleBoth', ['O-O']],
+  ['nhập thành hậu', 'castleBoth', ['O-O-O']],
+
   // --- Câu rác ---
   ['hello world', 'start', 'unknown'],
   ['', 'start', 'unknown'],
@@ -330,6 +343,8 @@ const CONFIRM = [
   ['correct', 'CONFIRM_YES'], ['sai', 'CONFIRM_NO'], ['không', 'CONFIRM_NO'], ['không phải', 'CONFIRM_NO'],
   ['không đúng', 'CONFIRM_NO'], ['no', 'CONFIRM_NO'], ['hủy', 'CONFIRM_NO'], ['huỷ', 'CONFIRM_NO'], ['cancel', 'CONFIRM_NO'],
   ['chưa đúng', 'CONFIRM_NO'], ['mã f3', null], ['', null],
+  ['vâng', 'CONFIRM_YES'], ['dạ', 'CONFIRM_YES'], ['dạ đúng', 'CONFIRM_YES'], ['ừa', 'CONFIRM_YES'],
+  ['dung', 'CONFIRM_YES'], ['dung roi', 'CONFIRM_YES'], ['khong', 'CONFIRM_NO'],
 ];
 for (const [text, expected] of CONFIRM) {
   test(`xác nhận "${text}"`, () => {

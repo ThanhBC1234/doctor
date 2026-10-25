@@ -41,12 +41,25 @@ function write(key, value) {
   }
 }
 
+/** Giá trị cho phép của các cài đặt dạng chọn; giá trị lạ (dữ liệu hỏng) bị thay bằng mặc định. */
+const SETTINGS_ENUMS = {
+  color: ['w', 'b', 'random'],
+  speechLang: ['vi-VN', 'en-US'],
+  fileStyle: ['vi', 'nato'],
+  listenMode: ['tap', 'continuous'],
+};
+
 export function loadSettings() {
   const saved = read(SETTINGS_KEY);
-  if (!saved || saved.v !== SCHEMA_VERSION) return { ...DEFAULT_SETTINGS };
+  const data = saved && saved.v === SCHEMA_VERSION ? saved.data : null;
+  if (!data || typeof data !== 'object') return { ...DEFAULT_SETTINGS };
   const out = { ...DEFAULT_SETTINGS };
   for (const k of Object.keys(DEFAULT_SETTINGS)) {
-    if (k in saved.data && typeof saved.data[k] === typeof DEFAULT_SETTINGS[k]) out[k] = saved.data[k];
+    const v = data[k];
+    if (typeof v !== typeof DEFAULT_SETTINGS[k]) continue;
+    if (typeof v === 'number' && !Number.isFinite(v)) continue;
+    if (SETTINGS_ENUMS[k] && !SETTINGS_ENUMS[k].includes(v)) continue;
+    out[k] = v;
   }
   return out;
 }

@@ -16,7 +16,6 @@ export function renderBoard(container, fen, opts = {}) {
   const el = document.createElement('div');
   el.className = 'board';
   el.dataset.testid = 'board';
-  el.setAttribute('role', 'img');
   el.dataset.fen = fen;
 
   const ranks = orientation === 'w' ? [8, 7, 6, 5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6, 7, 8];

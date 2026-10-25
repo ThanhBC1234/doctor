@@ -1,7 +1,8 @@
 // Bọc speechSynthesis: hàng đợi câu nói, mỗi câu trả về Promise xong khi đọc xong.
 // Truy cập API trình duyệt qua một điểm duy nhất (getSynth) để test thay bằng bản giả.
 
-const MAX_CHUNK = 200;
+const MAX_CHUNK = 140; // Chrome cắt câu dài (> ~15 giây) với giọng online: chia nhỏ
+const START_WATCHDOG_MS = 5000;
 
 export function getSynth() {
   return typeof window !== 'undefined' && window.speechSynthesis ? window.speechSynthesis : null;
@@ -38,6 +39,7 @@ export function createTts(opts = {}) {
   const synth = getSynth();
   const Utterance = getUtteranceCtor();
   const lang = opts.lang || 'vi-VN';
+  const startWatchdogMs = opts.startWatchdogMs || START_WATCHDOG_MS;
   let voice = null;
   let rate = 1;
   let pending = 0;
@@ -80,22 +82,30 @@ export function createTts(opts = {}) {
       }
       // Giữ tham chiếu tới utterance tới khi đọc xong: Chrome có thể dọn rác nó sớm và không bao giờ bắn onend.
       live.add(u);
-      u.onend = () => { live.delete(u); finish(); };
+      const done2 = () => { live.delete(u); finish(); };
+      u.onend = done2;
       u.onerror = (e) => {
-        live.delete(u);
         if (e?.error && e.error !== 'interrupted' && e.error !== 'canceled') console.error('[tts] lỗi đọc', e.error);
-        finish();
+        done2();
       };
-      // Chrome đôi khi không bắn onend: chờ theo độ dài câu rồi tự xong.
-      timer = setTimeout(() => { live.delete(u); finish(); }, (text.length * 90) / rate + 1500);
+      // Chrome đôi khi không bắn onend: chờ theo độ dài câu rồi tự xong. Chỉ tính giờ từ lúc THẬT SỰ bắt đầu
+      // đọc (giọng online/Android có thể khởi động chậm 1–3 giây); nếu không bao giờ bắt đầu thì bỏ qua sau 5 giây.
+      const durationMs = (text.length * 90) / rate + 1500;
+      timer = setTimeout(() => {
+        console.error('[tts] câu không bắt đầu đọc được', text.slice(0, 40));
+        done2();
+      }, startWatchdogMs);
+      u.onstart = () => {
+        clearTimeout(timer);
+        timer = setTimeout(done2, durationMs);
+      };
       try {
         // Chrome có thể kẹt ở trạng thái "paused" sau khi tab bị ẩn: resume() trước khi đọc là vô hại.
         if (typeof synth.resume === 'function') synth.resume();
         synth.speak(u);
       } catch (err) {
         console.error('[tts] speak thất bại', err);
-        live.delete(u);
-        finish();
+        done2();
       }
     });
   }
@@ -139,9 +149,7 @@ export function createTts(opts = {}) {
     unlock() {
       if (!synth || !Utterance) return;
       try {
-        const u = new Utterance(' ');
-        u.volume = 0;
-        synth.speak(u);
+        synth.speak(new Utterance('')); // câu rỗng: kết thúc ngay, chỉ để trình duyệt ghi nhận thao tác người dùng
       } catch { /* bỏ qua */ }
     },
 

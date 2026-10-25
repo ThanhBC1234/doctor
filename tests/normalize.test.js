@@ -90,8 +90,10 @@ test('"to"/"two" trong tiếng Anh', () => {
 });
 
 test('từ không biết bị bỏ qua và được ghi lại', () => {
-  const r = lex('con chó mã f3');
-  assert.deepEqual(r.unknown, ['chó']);
+  const r = lex('con chuối mã f3');
+  assert.deepEqual(r.unknown, ['chuối']);
+  // từ đệm quen thuộc không bị coi là lạ
+  assert.deepEqual(lex('ừm e4 luôn nhé').unknown, []);
 });
 
 test('expandReadings: cách hiểu mặc định đứng đầu, bỏ token ignore', () => {

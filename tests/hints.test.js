@@ -42,3 +42,8 @@ test('dữ liệu lưu sai thì kẹp lại trong giới hạn', () => {
   const h2 = createHints({ peeksLeft: 'x' });
   assert.equal(h2.peeksLeft, 1);
 });
+
+test('dữ liệu lưu là null / không phải object → mặc định', () => {
+  assert.deepEqual(createHints(null).serialize(), { peeksLeft: 1, locatesLeft: 2 });
+  assert.deepEqual(createHints('x').serialize(), { peeksLeft: 1, locatesLeft: 2 });
+});

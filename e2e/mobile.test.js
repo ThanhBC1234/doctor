@@ -31,7 +31,8 @@ test('E19: điện thoại 390×844 — không tràn ngang, vùng chạm lớn, 
 
   await page.tap('[data-testid=talk]');
   await page.waitForFunction(() => !!window.__fakeRecognition.active);
-  assert.equal(await page.getAttribute('#screen-play', 'data-phase'), 'listening');
+  // "Đang nghe" chỉ hiện khi trình duyệt báo đã bắt đầu thu (onstart), một nhịp sau start()
+  await page.waitForFunction(() => document.getElementById('screen-play').dataset.phase === 'listening', null, { timeout: 3000 });
   await page.evaluate(() => window.__fakeRecognition.emit('e4'));
   await waitEngineMoved(page, 1);
 

@@ -78,6 +78,9 @@ Test e2e dùng micro và giọng đọc giả (`e2e/helpers/fakes.js`); mỗi te
 - `vendor/stockfish/package.json` (`"type":"commonjs"`) là bắt buộc để Node chạy được Stockfish khi `package.json` gốc có `"type":"module"`. Đừng xóa.
 - Trong một tiến trình Node chỉ khởi tạo được **một** bản Stockfish; dùng chung cho nhiều vai.
 - UCI_Elo 1320 ≈ Skill Level 0. Mức < 1320 không được dùng Skill > 0 (xem `PLAN.md` mục 6.2 và mục 16).
+- `stockfish-19-lite-single.wasm` cần **WebAssembly SIMD** (Safari/iOS 16.4+, Chrome 91+). `js/engine.js` có `wasmSimdSupported()`; trình duyệt cũ được báo rõ ở màn hình đầu. Bản `stockfish-19-asm.js` (không cần SIMD) bị "Error: abort" ngay sau `uciok` khi thử trong Node → không dùng.
+- `recognition.js`, `tts.js`, `storage.js` test được trong Node bằng cách gán `globalThis.window = {...}` giả trước khi gọi (xem `tests/recognition.test.js`, `tests/tts.test.js`, `tests/storage.test.js`).
+- Sau mỗi thay đổi giao diện: chạy `node tools/screenshots.mjs` và **xem ảnh** trong `docs/screenshots/` (lượt 1 đã bắt được 3 lỗi chỉ nhìn ảnh mới thấy).
 
 ## Khi gặp điều chưa rõ
 

@@ -4,6 +4,8 @@
 // Phòng thủ với hành vi thật của trình duyệt:
 //  - Safari có thể bắn kết quả tạm (isFinal=false) dù interimResults=false: chỉ dùng khi không có kết quả cuối.
 //  - onend đôi khi không bao giờ tới (sau stop/abort, hoặc khi tab bị ẩn): có hẹn giờ tự dọn để micro không "kẹt".
+//  - Kết quả/lỗi tới muộn sau khi phiên đã đóng bị bỏ qua (không bao giờ được xử lý thành nước đi).
+//  - Micro thật bắt đầu thu sau start() 100–500 ms: tiếng bíp "đang nghe" chỉ phát khi trình duyệt bắt đầu thu.
 
 export function getRecognitionCtor() {
   if (typeof window === 'undefined') return null;
@@ -15,10 +17,11 @@ export function getRecognitionCtor() {
  *   lang?: string,
  *   timeoutMs?: number,      // tự dừng nghe sau khoảng này
  *   endGraceMs?: number,     // sau khi dừng, chờ onend tối đa chừng này rồi tự dọn
- *   onStart?: () => void,
+ *   startGraceMs?: number,   // nếu trình duyệt không báo đã bắt đầu thu, coi như đã bắt đầu sau chừng này
+ *   onStart?: () => void,    // micro thật sự đang thu
  *   onResult: (alternatives: string[]) => void,
  *   onNoSpeech?: () => void,
- *   onError?: (code: string) => void,
+ *   onError?: (code: string) => void,   // kể cả 'no-match' (nghe thấy nhưng không nhận ra chữ) và 'start-failed'
  *   onEnd?: () => void,
  * }} opts
  */
@@ -26,12 +29,21 @@ export function createRecognizer(opts) {
   let lang = opts.lang || 'vi-VN';
   const timeoutMs = opts.timeoutMs || 8000;
   const endGraceMs = opts.endGraceMs ?? 2000;
+  const startGraceMs = opts.startGraceMs ?? 500;
   let current = null;
 
   function cleanup(session) {
     clearTimeout(session.timer);
     clearTimeout(session.killTimer);
+    clearTimeout(session.startTimer);
     if (current === session) current = null;
+  }
+
+  function started(session) {
+    if (session.started || session.finished) return;
+    session.started = true;
+    clearTimeout(session.startTimer);
+    opts.onStart?.();
   }
 
   /** Kết thúc phiên (từ onend thật hoặc hẹn giờ tự dọn): gọi callback đúng một lần. */
@@ -43,6 +55,8 @@ export function createRecognizer(opts) {
       if (session.interim) {
         session.gotResult = true;
         opts.onResult(session.interim);
+      } else if (session.nomatch) {
+        opts.onError?.('no-match');
       } else {
         opts.onNoSpeech?.();
       }
@@ -53,6 +67,21 @@ export function createRecognizer(opts) {
   function armKillTimer(session, delay) {
     clearTimeout(session.killTimer);
     session.killTimer = setTimeout(() => finish(session), delay);
+  }
+
+  /** Ghép các đoạn đã chốt (một số trình duyệt chia câu thành nhiều kết quả) + các phương án của đoạn cuối. */
+  function collectAlternatives(results) {
+    const list = Array.from(results || []);
+    const finals = list.filter((r) => r && r.isFinal !== false);
+    const last = list[list.length - 1];
+    if (!last) return { alts: [], final: false };
+    const prefix = finals.slice(0, -1).map((r) => r[0]?.transcript?.trim()).filter(Boolean).join(' ');
+    const alts = [];
+    for (let i = 0; i < last.length; i++) {
+      const t = last[i]?.transcript?.trim();
+      if (t) alts.push(prefix ? `${prefix} ${t}` : t);
+    }
+    return { alts, final: last.isFinal !== false };
   }
 
   return {
@@ -69,24 +98,21 @@ export function createRecognizer(opts) {
       if (!Ctor || current) return false;
       const rec = new Ctor();
       const session = {
-        rec, gotResult: false, aborted: false, failed: false, finished: false, interim: null, timer: null, killTimer: null,
+        rec, gotResult: false, aborted: false, failed: false, finished: false, started: false, nomatch: false,
+        interim: null, timer: null, killTimer: null, startTimer: null,
       };
       rec.lang = lang;
       rec.continuous = false;
       rec.interimResults = false;
       rec.maxAlternatives = 3;
 
+      rec.onaudiostart = () => started(session);
+      rec.onstart = () => started(session);
       rec.onresult = (e) => {
-        if (session.aborted || session.gotResult) return;
-        const res = e.results?.[e.results.length - 1];
-        if (!res) return;
-        const alts = [];
-        for (let i = 0; i < res.length; i++) {
-          const t = res[i]?.transcript?.trim();
-          if (t) alts.push(t);
-        }
+        if (session.finished || session.aborted || session.gotResult) return;
+        const { alts, final } = collectAlternatives(e.results);
         if (!alts.length) return;
-        if (res.isFinal === false) {
+        if (!final) {
           session.interim = alts;
           return;
         }
@@ -95,7 +121,9 @@ export function createRecognizer(opts) {
         // Đã có kết quả: nếu onend không tới, tự đóng phiên để micro có thể mở lại.
         armKillTimer(session, endGraceMs);
       };
+      rec.onnomatch = () => { session.nomatch = true; };
       rec.onerror = (e) => {
+        if (session.finished || session.aborted) return;
         const code = e?.error || 'unknown';
         if (code === 'aborted') return;
         if (code === 'no-speech') return;
@@ -120,7 +148,7 @@ export function createRecognizer(opts) {
         try { rec.stop(); } catch { /* bỏ qua */ }
         armKillTimer(session, endGraceMs);
       }, timeoutMs);
-      opts.onStart?.();
+      session.startTimer = setTimeout(() => started(session), startGraceMs);
       return true;
     },
 

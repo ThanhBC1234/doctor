@@ -5,7 +5,8 @@ export const DEFAULT_HINTS = { peeks: 1, locates: 2 };
 /**
  * @param {{ peeksLeft?:number, locatesLeft?:number }} [saved]
  */
-export function createHints(saved = {}) {
+export function createHints(saved) {
+  saved = saved && typeof saved === 'object' ? saved : {};
   let peeksLeft = Number.isInteger(saved.peeksLeft) ? saved.peeksLeft : DEFAULT_HINTS.peeks;
   let locatesLeft = Number.isInteger(saved.locatesLeft) ? saved.locatesLeft : DEFAULT_HINTS.locates;
   peeksLeft = Math.max(0, Math.min(DEFAULT_HINTS.peeks, peeksLeft));

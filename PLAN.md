@@ -27,7 +27,7 @@ Một trang web tĩnh, mở trên máy tính hoặc điện thoại, cho ngườ
 | Ngôn ngữ | HTML5 + CSS + **JavaScript thuần (ES modules)** | Không cần build; mở file là chạy |
 | Luật cờ | **chess.js v1.4.0** (bản ESM `dist/esm/chess.js`), vendor vào `vendor/chess.js/chess.js` | Kiểm tra nước hợp lệ, SAN, FEN, PGN, phát hiện kết thúc ván |
 | Engine | **Stockfish 19 Lite, single-threaded** từ npm `stockfish@19.0.1`: `bin/stockfish-19-lite-single.js` + `bin/stockfish-19-lite-single.wasm` (~1,9 MB), vendor vào `vendor/stockfish/` | Chạy trên host tĩnh, không cần header COOP/COEP; đủ mạnh (vượt xa 2500 Elo) |
-| Nhận dạng giọng nói | **Web Speech API** (`window.SpeechRecognition \|\| window.webkitSpeechRecognition`) | Miễn phí, không server, không API key. Hoạt động trên Chrome, Edge, Safari (iOS 14.5+), Chrome Android |
+| Nhận dạng giọng nói | **Web Speech API** (`window.SpeechRecognition \|\| window.webkitSpeechRecognition`) | Miễn phí, không server, không API key. Hoạt động trên Chrome, Edge, Safari (iOS 14.5+; nhưng Stockfish cần iOS 16.4+, xem mục 15), Chrome Android |
 | Đọc giọng nói | **Web Speech Synthesis** (`speechSynthesis`) | Có sẵn mọi trình duyệt hiện đại |
 | Lưu trữ | `localStorage` | Cài đặt + ván đang chơi |
 | Hosting | **GitHub Pages**, deploy từ nhánh, thư mục gốc `/` | HTTPS sẵn (micro cần HTTPS) |
@@ -765,3 +765,23 @@ Những chỗ đặc tả chưa nói rõ hoặc phải điều chỉnh khi code,
 | Hộp cài đặt trong ván | Đổi xác nhận, thông báo ăn quân, cảnh báo đồng hồ, cách đọc cột, tốc độ đọc; nút "Lưu và thoát" | Không phải thoát ván để đổi cài đặt |
 | `window.__blindfold` (chế độ `?test=1`) | Thêm `getCueLog`, `getMicStarts`, `setTiming`, `setClockTime`, `setSettings`, `getSettings`, `getPgn` | Để test điều khiển thời gian, đồng hồ, cài đặt |
 | Công cụ | `tools/measure-strength.mjs` (đo độ mạnh), `tools/screenshots.mjs` (chụp màn hình) | Phục vụ tinh chỉnh và báo cáo |
+
+Lượt rà soát 2 (3 nhóm rà soát độc lập + tự đọc lại), các quyết định thêm:
+
+| Chủ đề | Quyết định | Lý do |
+|---|---|---|
+| Đồng hồ khi máy đọc nước | Máy bấm đồng hồ (nhận giây cộng) rồi đồng hồ **tạm dừng** trong lúc đọc nước của máy; chạy lại khi đọc xong. Nước kết thúc ván thì dừng hẳn | Không trừ giờ người chơi khi họ chưa nghe xong; nước chiếu hết/pat không bị "hết giờ" đè mất kết quả |
+| Engine hỏng giữa ván | Thử khởi động lại Stockfish một lần; vẫn hỏng → đọc lỗi, dừng đồng hồ, về màn hình chính (ván đã lưu, có nút Tiếp tục) | Không để ván đứng im ở "MÁY ĐANG NGHĨ…" |
+| Chờ "đúng/sai" mà nói nước khác | Đổi sang nước đó và hỏi lại; nhắc lại đúng nước đang chờ = đồng ý; chỉ lấy nước từ phương án nhận dạng xếp trước phương án chứa "đúng/sai" | Thói quen tự nhiên của người chơi; không để phương án nhận dạng kém hơn đè lên câu "đúng" |
+| Từ lạ cạnh ô đến | Không đoán thành tốt, bắt nói lại | "tương bê ba" (tượng b3 nghe nhầm) không được thành b3 |
+| Tiếng bíp "đang nghe" | Phát khi trình duyệt báo bắt đầu thu (`onaudiostart`/`onstart`), dự phòng 500 ms | Micro thật bắt đầu thu sau `start()` 100–500 ms; bíp sớm làm mất âm tiết đầu |
+| Hẹn giờ dự phòng của giọng đọc | Tính từ `onstart` của câu đọc; chưa bao giờ bắt đầu thì bỏ qua sau 5 giây | Giọng online/Android khởi động chậm; tính từ lúc gọi `speak()` làm micro mở khi loa còn đang đọc |
+| Phím tắt | Bỏ qua tổ hợp có Ctrl/Cmd/Alt và phím giữ (repeat); Space luôn là "nói" | Ctrl+L, Cmd+P từng tiêu mất lượt trợ giúp |
+| Chơi lại | Dùng đúng Elo, màu, đồng hồ của ván vừa xong | "Chơi lại cùng cài đặt" đúng nghĩa |
+| Cảnh báo giờ | "Còn một phút"/bíp 30 giây chỉ lặp khi giờ tăng ≥ 60 giây; bíp 10 giây cuối lặp lại ngay khi vượt mốc | Không lặp "còn một phút" sau mỗi lần cộng giây, nhưng 10 giây cuối luôn có bíp |
+| Tải PGN trên điện thoại | Ưu tiên bảng chia sẻ (`navigator.share` với file), không có thì tải xuống; URL blob giữ 60 giây | Tải file từ web app trên iOS không ổn định; Firefox/Safari lấy dữ liệu sau khi người dùng xác nhận |
+| Sao chép PGN | Clipboard API → `execCommand('copy')` → báo "Không sao chép được" + bíp lỗi | Không nuốt lỗi im lặng |
+| `<dialog>` không hỗ trợ | CSS `dialog:not([open]) { display:none }` + tự xử lý submit của form cài đặt | Safari < 15.4 từng hiện form giữa màn chơi và tải lại trang khi bấm Đóng |
+| `<title>`, `<noscript>` | Chữ tĩnh trong HTML (ngoại lệ của quy ước vi.js) | Phải hiện được gì đó khi JavaScript chưa chạy hoặc lỗi |
+| Cảnh báo trong ván | Hiện thêm ở `#play-alert` trên màn chơi | `#warnings` nằm trong màn cài đặt đang ẩn |
+| Dữ liệu localStorage hỏng | Kiểm tra kiểu, giá trị cho phép (màu, ngôn ngữ, kiểu đọc cột…), số hữu hạn; `createHints(null)` → mặc định | GitHub Pages dùng chung localStorage cho mọi dự án của cùng tài khoản |
