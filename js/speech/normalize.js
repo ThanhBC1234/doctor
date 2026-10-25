@@ -26,10 +26,10 @@ const FILE_ALIASES = {
   a: ['ây', 'ay', 'alpha', 'alfa'],
   b: ['bê', 'bờ', 'bi', 'bee', 'bravo', 'bế', 'bề', 'bể'],
   c: ['c', 'xê', 'xi', 'si', 'see', 'sea', 'cê', 'charlie', 'sê', 'xế', 'xề', 'cee'],
-  d: ['d', 'dê', 'đê', 'đe', 'di', 'dee', 'delta', 'dờ', 'đờ', 'đề', 'dề', 'dế'],
+  d: ['d', 'dê', 'đê', 'đe', 'di', 'dee', 'delta', 'dờ', 'đờ', 'đề', 'dề', 'dế', 'rê', 'yê'],
   e: ['e', 'ê', 'i', 'ee', 'echo', 'ế', 'ề', 'ể'],
-  f: ['f', 'ép', 'ep', 'ef', 'eff', 'foxtrot', 'phờ', 'éf'],
-  g: ['g', 'gờ', 'giê', 'gie', 'ghi', 'gi', 'gee', 'golf', 'gê', 'jee', 'ji'],
+  f: ['f', 'ép', 'ep', 'ef', 'eff', 'foxtrot', 'phờ', 'éf', 'ếp', 'ép phờ'],
+  g: ['g', 'gờ', 'giê', 'gie', 'ghi', 'gi', 'gee', 'golf', 'gê', 'jee', 'ji', 'giờ'],
   h: ['h', 'hát', 'hắt', 'hat', 'aitch', 'hotel', 'hờ', 'hách', 'hét'],
 };
 
@@ -46,9 +46,9 @@ const RANK_ALIASES = {
 
 const PIECE_ALIASES = {
   k: ['k', 'vua', 'tướng', 'king', 'kilo'],
-  q: ['q', 'hậu', 'queen', 'quebec'],
+  q: ['q', 'hậu', 'queen', 'quebec', 'hầu'],
   r: ['r', 'xa', 'rook', 'rock', 'ruk', 'rooks', 'romeo'],
-  b: ['tượng', 'tịnh', 'bishop', 'bishops'],
+  b: ['tượng', 'tịnh', 'bishop', 'bishops', 'tường', 'tưởng'],
   n: ['n', 'mã', 'mả', 'má', 'ngựa', 'knight', 'night', 'horse', 'nite', 'knights', 'november'],
   p: ['p', 'tốt', 'chốt', 'binh', 'pawn', 'pawns', 'pond', 'pon', 'papa'],
 };

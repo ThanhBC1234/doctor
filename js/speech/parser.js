@@ -11,7 +11,7 @@ const COMMANDS = [
   ['REPEAT', ['nhắc lại', 'nói lại', 'máy đi gì', 'máy vừa đi gì', 'máy vừa đi', 'máy đã đi gì', 'lặp lại', 'đọc lại', 'repeat', 'what did you play', 'say again', 'again']],
   ['PEEK', ['tháo bịt mắt', 'mở bịt mắt', 'bịt mắt', 'xem bàn cờ', 'cho xem', 'bàn cờ', 'show board', 'show the board', 'show me the board', 'peek', 'look at the board']],
   ['LOCATE', ['vị trí quân', 'vị trí các quân', 'vị trí', 'quân ở đâu', 'các quân ở đâu', 'ở đâu', 'đọc vị trí', 'quân chính', 'where are the pieces', 'where are', 'locate', 'pieces']],
-  ['TIME', ['thời gian', 'đồng hồ', 'còn bao nhiêu', 'mấy phút', 'time', 'clock']],
+  ['TIME', ['thời gian', 'đồng hồ', 'còn bao nhiêu', 'mấy phút', 'mấy giờ', 'time', 'clock']],
   ['RESIGN', ['xin thua', 'tôi thua', 'đầu hàng', 'chịu thua', 'resign', 'i resign', 'give up']],
   ['DRAW', ['cầu hòa', 'đề nghị hòa', 'xin hòa', 'hòa không', 'hòa nhé', 'hòa', 'offer draw', 'offer a draw', 'draw']],
   ['HELP', ['trợ giúp', 'hướng dẫn', 'các lệnh', 'giúp', 'help', 'commands']],
@@ -139,12 +139,36 @@ export function parseIntent(tokens) {
         return null;
     }
   }
+  let promoWord = false;
+  let takesAfter = false;
   for (let i = targetI + 1; i < seq.length; i++) {
     const t = seq[i];
-    if (t.t === 'promo' || t.t === 'to') continue;
+    if (t.t === 'to') continue;
+    if (t.t === 'promo') { promoWord = true; continue; }
+    if (t.t === 'takes') {
+      // "mã f3 ăn tốt": nói "ăn" sau ô đến
+      if (takesAfter || afterTakes) return null;
+      takesAfter = true;
+      intent.takes = true;
+      continue;
+    }
     if (t.t === 'piece') {
-      if (intent.promotion) return null;
-      intent.promotion = t.v;
+      if (takesAfter) {
+        if (intent.captured) return null;
+        intent.captured = t.v;
+        continue;
+      }
+      const promotionRank = intent.to[1] === '1' || intent.to[1] === '8';
+      if (promoWord || (promotionRank && !intent.piece && PROMOTABLE.has(t.v))) {
+        if (intent.promotion) return null;
+        intent.promotion = t.v;
+        // "e8 hậu" thường là phong Hậu, nhưng "e1 xe" có thể là Xe tới e1: matchIntent thử cả hai cách hiểu.
+        if (!promoWord) intent.implicitPromotion = true;
+      } else {
+        // "f3 mã": tên quân nói sau ô đến
+        if (intent.piece) return null;
+        intent.piece = t.v;
+      }
       continue;
     }
     return null;
@@ -164,6 +188,12 @@ export function matchIntent(intent, legalMoves) {
   if (!intent) return [];
   if (intent.kind === 'castle') {
     return legalMoves.filter((m) => (intent.side ? m.flags.includes(intent.side) : /[kq]/.test(m.flags)));
+  }
+  if (intent.implicitPromotion) {
+    // Tên quân nói sau ô ở hàng 1/8 không kèm "phong": ưu tiên phong cấp, không có thì hiểu là quân đó đi tới ô.
+    const asPromotion = matchIntent({ ...intent, implicitPromotion: false }, legalMoves);
+    if (asPromotion.length) return asPromotion;
+    return matchIntent({ ...intent, implicitPromotion: false, promotion: null, piece: intent.promotion }, legalMoves);
   }
   let ms = legalMoves.filter((m) => m.to === intent.to);
   if (intent.from) ms = ms.filter((m) => m.from === intent.from);

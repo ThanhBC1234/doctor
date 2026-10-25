@@ -160,8 +160,7 @@ test('Safari iOS: micro tự mở bị từ chối → im lặng, chạm để t
       const Orig = window.SpeechRecognition;
       class IosLike extends Orig {
         start() {
-          const last = window.__blindfold?.getMicStarts().at(-1);
-          if (last?.auto) {
+          if (window.__blindfold?.getState().lastStartAuto) {
             window.__fakeRecognition.starts.push({ at: performance.now(), state: window.__blindfold.getState(), ttsBusy: false, denied: true });
             setTimeout(() => { this.onerror?.({ error: 'not-allowed' }); this.onend?.(); }, 0);
             return;
@@ -186,5 +185,143 @@ test('Safari iOS: micro tự mở bị từ chối → im lặng, chạm để t
   assert.equal(await page.textContent('#warnings'), '');
   const errs = current().errors;
   assert.ok(errs.every((e) => e.includes('not-allowed')), errs.join('\n'));
+  errs.length = 0;
+});
+
+test('phím cách khi focus đang ở nút khác: mở micro, không bấm nút đó', async () => {
+  const page = await open();
+  await startGame(page);
+  await waitPlayerReady(page);
+  await page.focus('#btn-repeat');
+  const before = (await spoken(page)).length;
+  await page.keyboard.press('Space');
+  await page.waitForFunction(() => !!window.__fakeRecognition.active);
+  await page.evaluate(() => window.__fakeRecognition.emit('e4'));
+  await waitEngineMoved(page, 1);
+  assert.equal((await spoken(page)).slice(before).some((t) => t.startsWith('Máy vừa đi')), false, 'nút Nhắc lại không bị bấm');
+  assert.equal((await state(page)).uciMoves[0], 'e2e4');
+});
+
+test('chạm vào vùng đồng hồ / ngoài nút cũng mở micro', async () => {
+  const page = await open();
+  await startGame(page, { timeControl: '5+0' });
+  await waitPlayerReady(page);
+  await page.click('[data-testid=clock-engine]');
+  await page.waitForFunction(() => !!window.__fakeRecognition.active);
+  await page.evaluate(() => window.__fakeRecognition.emit('e4'));
+  await waitEngineMoved(page, 1);
+  assert.equal((await state(page)).ply, 2);
+});
+
+test('xác nhận: nhắc lại đúng nước → đồng ý; nói nước khác → đổi nước và hỏi lại', async () => {
+  const page = await open();
+  await startGame(page, { confirm: true });
+  await page.evaluate(() => { window.__blindfold.forceEngineMove('e7e5'); window.__blindfold.forceEngineMove('b8c6'); });
+  await say(page, 'e4');
+  await waitSpoken(page, /^Tốt e 4\. Đúng không\?$/);
+  await say(page, 'mã f3');
+  await waitSpoken(page, /^Mã ép 3\. Đúng không\?$/);
+  assert.equal((await state(page)).ply, 0, 'chưa đi khi chưa đồng ý');
+  await say(page, 'mã f3');
+  await waitEngineMoved(page, 1);
+  assert.equal((await state(page)).uciMoves[0], 'g1f3');
+  // "không" kèm nước đang chờ → hủy
+  await say(page, 'e4');
+  await waitSpoken(page, /^Tốt e 4\. Đúng không\?$/, 3);
+  await say(page, 'không e4');
+  await waitSpoken(page, /^Đã hủy\.$/);
+  assert.equal((await state(page)).ply, 2);
+});
+
+test('gõ tay khi đang tạm dừng và khi đang chờ xác nhận', async () => {
+  const page = await open();
+  await startGame(page, { timeControl: '5+0', confirm: true });
+  await say(page, 'tạm dừng');
+  await waitSpoken(page, /^Đã tạm dừng\./);
+  await page.click('#type-box summary');
+  await page.fill('#type-input', 'e4');
+  await page.press('#type-input', 'Enter');
+  await waitSpoken(page, /^Đang tạm dừng\. Nói tiếp tục\.$/);
+  await page.waitForFunction(() => window.__blindfold.getState().busy === 0 && !window.__fakeSynth.speaking);
+  await page.fill('#type-input', 'tiếp tục');
+  await page.press('#type-input', 'Enter');
+  await waitSpoken(page, /^Tiếp tục\.$/);
+  await page.waitForFunction(() => window.__blindfold.getState().phase === 'player' && window.__blindfold.getState().clocks.running);
+  await say(page, 'e4');
+  await waitSpoken(page, /^Tốt e 4\. Đúng không\?$/);
+  await page.waitForFunction(() => window.__blindfold.getState().busy === 0 && !window.__fakeSynth.speaking);
+  await page.fill('#type-input', 'đúng');
+  await page.press('#type-input', 'Enter');
+  await waitEngineMoved(page, 1);
+  assert.equal((await state(page)).uciMoves[0], 'e2e4');
+});
+
+test('engine hỏng giữa ván → tự khởi động lại, ván tiếp tục không báo lỗi', async () => {
+  const page = await open();
+  await startGame(page);
+  await page.evaluate(() => window.__blindfold.failEngine(1));
+  await say(page, 'e4');
+  await waitEngineMoved(page, 1, 60000);
+  const s = await state(page);
+  assert.equal(s.ply, 2);
+  assert.equal(s.engineReady, true);
+  assert.equal((await spoken(page)).some((t) => t.includes('Máy gặp lỗi')), false);
+  await say(page, 'mã f3');
+  await waitEngineMoved(page, 3);
+  const errs = current().errors;
+  assert.ok(errs.every((e) => e.includes('khởi động lại') || e.includes('giả lập')), errs.join('\n'));
+  errs.length = 0;
+});
+
+test('cảnh báo "còn một phút" không lặp lại sau mỗi lần cộng giây', async () => {
+  const page = await open();
+  await startGame(page, { timeControl: '15+10' });
+  await waitPlayerReady(page);
+  await page.evaluate(() => window.__blindfold.setClockTime('player', 60500));
+  await waitSpoken(page, /^Còn một phút\.$/, 0, 5000);
+  await waitPlayerReady(page);
+  // Cộng 10 giây rồi lại tụt xuống dưới 1 phút: không nhắc lại
+  await page.evaluate(() => window.__blindfold.setClockTime('player', 70000));
+  await page.waitForTimeout(400);
+  await page.evaluate(() => window.__blindfold.setClockTime('player', 59000));
+  await page.waitForTimeout(800);
+  assert.equal((await spoken(page)).filter((t) => t === 'Còn một phút.').length, 1);
+});
+
+test('ván lưu bị thiếu dữ liệu đồng hồ vẫn tiếp tục được và kết thúc không lỗi', async () => {
+  const page = await open();
+  await page.evaluate(() => {
+    localStorage.setItem('blindfold.game', JSON.stringify({
+      v: 1, uciMoves: ['e2e4', 'e7e5'], playerColor: 'x', elo: '1600', hints: { peeksLeft: 'a' },
+      clock: { remaining: { w: 'abc' } }, timeControl: null,
+    }));
+  });
+  await page.reload();
+  await page.waitForFunction(() => window.__blindfold?.getState().engineReady === true, null, { timeout: 30000 });
+  await page.evaluate(() => window.__blindfold.setTiming({ engineDelayMs: 0, postTtsMs: 0 }));
+  await page.click('#btn-resume');
+  await waitPlayerReady(page);
+  const s = await state(page);
+  assert.equal(s.playerColor, 'w');
+  assert.equal(s.elo, 1600);
+  assert.equal(s.clocks, null);
+  assert.deepEqual(s.hints, { peeksLeft: 1, locatesLeft: 2 });
+  await say(page, 'xin thua');
+  await waitSpoken(page, /xin thua\?$/);
+  await say(page, 'đúng');
+  await page.waitForFunction(() => window.__blindfold.getState().over);
+  await page.waitForSelector('#screen-gameover', { state: 'visible' });
+});
+
+test('giọng đọc của trình duyệt bị lỗi (không có giọng) → ván vẫn chạy, không kẹt', async () => {
+  const page = await open({ fakes: { realSynth: true } });
+  await startGame(page, { confirm: true });
+  await say(page, 'e4');
+  await waitSpoken(page, /Đúng không\?$/);
+  await say(page, 'đúng');
+  await waitEngineMoved(page, 1, 30000);
+  assert.equal((await state(page)).ply, 2);
+  const errs = current().errors;
+  assert.ok(errs.every((e) => /\[tts\]/.test(e)), errs.join('\n'));
   errs.length = 0;
 });

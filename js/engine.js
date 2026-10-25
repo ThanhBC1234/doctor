@@ -79,22 +79,33 @@ export function pickRandomized(candidates, randomize, random = Math.random, engi
 export function createEngine(transport, opts = {}) {
   const random = opts.random || Math.random;
   const timeoutMs = opts.timeoutMs || 30000;
+  // Tải file .wasm lần đầu trên mạng chậm có thể mất hơn 30 giây: khởi động được chờ lâu hơn.
+  const initTimeoutMs = opts.initTimeoutMs || 120000;
   let waiters = [];
   let params = eloToEngineParams(1400);
   let queue = Promise.resolve();
   let ready = false;
+  let broken = null; // lỗi worker: mọi lệnh sau đó bị từ chối ngay
 
   transport.onLine((line) => {
     for (const w of waiters.slice()) w(line);
   });
+  transport.onError?.((e) => {
+    broken = new Error(`Stockfish gặp lỗi: ${e?.message || e}`);
+    ready = false;
+    const pending = waiters;
+    waiters = [];
+    for (const w of pending) w.fail(broken);
+  });
 
   /** Chờ tới khi có dòng thỏa điều kiện. collect nhận mọi dòng trước đó. */
-  function waitFor(pred, collect) {
+  function waitFor(pred, collect, limitMs = timeoutMs) {
     return new Promise((resolve, reject) => {
+      if (broken) { reject(broken); return; }
       const timer = setTimeout(() => {
         waiters = waiters.filter((w) => w !== onLine);
         reject(new Error('Stockfish không phản hồi'));
-      }, timeoutMs);
+      }, limitMs);
       function onLine(line) {
         if (collect) collect(line);
         if (pred(line)) {
@@ -103,6 +114,10 @@ export function createEngine(transport, opts = {}) {
           resolve(line);
         }
       }
+      onLine.fail = (err) => {
+        clearTimeout(timer);
+        reject(err);
+      };
       waiters.push(onLine);
     });
   }
@@ -150,7 +165,7 @@ export function createEngine(transport, opts = {}) {
 
     init() {
       return enqueue(async () => {
-        const p = waitFor((l) => l === 'uciok');
+        const p = waitFor((l) => l === 'uciok', null, initTimeoutMs);
         transport.post('uci');
         await p;
         await isReady();

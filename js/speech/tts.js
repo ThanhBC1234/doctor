@@ -45,6 +45,7 @@ export function createTts(opts = {}) {
   let generation = 0; // tăng khi cancel(): các câu đang chờ bị bỏ
   const log = [];
   const resolvers = new Set();
+  const live = new Set(); // utterance đang đọc (xem speakChunk)
 
   function setSpeaking(delta) {
     const before = pending > 0;
@@ -77,17 +78,23 @@ export function createTts(opts = {}) {
         console.warn('[tts] không đặt được giọng', err);
         if (!u) { finish(); return; }
       }
-      u.onend = finish;
+      // Giữ tham chiếu tới utterance tới khi đọc xong: Chrome có thể dọn rác nó sớm và không bao giờ bắn onend.
+      live.add(u);
+      u.onend = () => { live.delete(u); finish(); };
       u.onerror = (e) => {
+        live.delete(u);
         if (e?.error && e.error !== 'interrupted' && e.error !== 'canceled') console.error('[tts] lỗi đọc', e.error);
         finish();
       };
       // Chrome đôi khi không bắn onend: chờ theo độ dài câu rồi tự xong.
-      timer = setTimeout(finish, (text.length * 90) / rate + 1500);
+      timer = setTimeout(() => { live.delete(u); finish(); }, (text.length * 90) / rate + 1500);
       try {
+        // Chrome có thể kẹt ở trạng thái "paused" sau khi tab bị ẩn: resume() trước khi đọc là vô hại.
+        if (typeof synth.resume === 'function') synth.resume();
         synth.speak(u);
       } catch (err) {
         console.error('[tts] speak thất bại', err);
+        live.delete(u);
         finish();
       }
     });
@@ -123,6 +130,9 @@ export function createTts(opts = {}) {
       generation++;
       try { synth?.cancel(); } catch { /* bỏ qua */ }
       for (const r of [...resolvers]) r();
+      live.clear();
+      // Chrome hay nuốt câu speak() ngay sau cancel(): câu kế tiếp chờ một nhịp ngắn.
+      chain = new Promise((resolve) => setTimeout(resolve, 150));
     },
 
     /** Chrome Android / iOS cần một lần speak trong thao tác người dùng để mở khóa. */

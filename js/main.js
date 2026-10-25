@@ -12,6 +12,7 @@ import { createGame } from './game.js';
 import { createEngine, createWorkerTransport } from './engine.js';
 import { createClock, TIME_CONTROLS, pgnTimeControl } from './clock.js';
 import { createHints } from './hints.js';
+import { clampElo } from './elo.js';
 import { loadSettings, saveSettings, loadGame, saveGame, clearGame } from './storage.js';
 import { buildPgn, lichessAnalysisUrl, pgnFileName } from './pgn.js';
 import { createTts } from './speech/tts.js';
@@ -61,6 +62,7 @@ let clockTimer = null;
 let lastPersist = 0;
 const forcedEngineMoves = [];
 const micStarts = [];
+let testEngineFailures = 0; // chế độ test: số lần tới máy "hỏng" để kiểm tra tự khởi động lại
 let lastStartWasAuto = false; // micro tự mở (không do chạm): iOS có thể từ chối, không coi là mất quyền
 
 const recognizer = createRecognizer({
@@ -124,6 +126,7 @@ function snapshot() {
     canListen: canListen(),
     engineReady,
     waitingConfirm: s.phase === 'confirm',
+    lastStartAuto: lastStartWasAuto,
     turn: G ? G.game.turn() : null,
     playerColor: G ? G.playerColor : null,
     fen: G ? G.game.fen() : null,
@@ -176,10 +179,11 @@ function startListening({ auto = false } = {}) {
   if (!canListen()) return false;
   if (!recognizer.isSupported()) return false;
   lastStartWasAuto = auto;
+  if (!recognizer.start()) return false; // không bíp khi micro không mở được (phiên cũ chưa đóng xong)
   if (phase() !== 'confirm') store.set({ transcript: '' }); // khi chờ xác nhận thì giữ câu vừa nghe
   micStarts.push({ phase: phase(), turn: G.game.turn(), speaking: tts.speaking, auto });
   cues.play('listen');
-  return recognizer.start();
+  return true;
 }
 
 /** Tự mở micro khi đang chờ trả lời (xác nhận, xem bàn cờ) hoặc ở chế độ nghe liên tục. */
@@ -221,7 +225,7 @@ async function handleSpeech(alts) {
   if (!G || G.over) return;
   const p = phase();
   await withBusy(async () => {
-    if (p === 'confirm') return onConfirmAnswer(parseUtterance(alts, { mode: 'confirm' }));
+    if (p === 'confirm') return onConfirmAnswer(interpretConfirm(alts));
     if (p === 'peek') {
       if (parseUtterance(alts, { mode: 'peek' }).type === 'command') await endPeek();
       return undefined;
@@ -271,6 +275,26 @@ async function handleRecognitionError(code) {
     }
     if (p === 'confirm') await onConfirmAnswer({ type: 'unknown' });
   });
+  // Chỉ tự mở lại micro khi đang chờ "đúng/sai" (có giới hạn số lần hỏi lại); các trường hợp khác
+  // người chơi chạm để nói, tránh lặp vô hạn khi mất mạng.
+  if (p === 'confirm') maybeAutoListen();
+}
+
+/**
+ * Khi chờ "đúng/sai": nhắc lại đúng nước đang chờ → đồng ý; nói một nước hợp lệ khác → đổi nước và hỏi lại.
+ * Người bịt mắt hay sửa nước bằng cách nói lại nước mới thay vì nói "sai".
+ */
+function interpretConfirm(alts) {
+  const r = parseUtterance(alts, { mode: 'confirm' });
+  const pending = G?.pendingConfirm;
+  if (!pending || pending.kind !== 'move') return r;
+  const m = parseUtterance(alts, { mode: 'move', legalMoves: G.game.legalMoves() });
+  if (m.type !== 'move' || m.matches.length !== 1) return r;
+  const move = m.matches[0];
+  const same = move.from === pending.move.from && move.to === pending.move.to && move.promotion === pending.move.promotion;
+  if (!same) return { type: 'replace', move, transcript: m.transcript };
+  if (r.type === 'command' && r.name === 'CONFIRM_NO') return r;
+  return { type: 'command', name: 'CONFIRM_YES', transcript: m.transcript };
 }
 
 // ---------------------------------------------------------------- nước đi người chơi
@@ -304,6 +328,12 @@ async function onConfirmAnswer(r) {
   const S = G;
   const pending = S.pendingConfirm;
   if (!pending) { setPhase('player'); return; }
+  if (r.type === 'replace') {
+    S.pendingConfirm = { kind: 'move', move: r.move };
+    S.confirmAttempts = 0;
+    await say(VI.say.confirmQuestion(speakMove(r.move, speakOpts())));
+    return;
+  }
   if (r.type === 'command' && r.name === 'CONFIRM_YES') {
     S.pendingConfirm = null;
     setPhase('player');
@@ -354,7 +384,7 @@ async function engineTurn() {
   const t0 = performance.now();
   let uci;
   try {
-    uci = forcedEngineMoves.length ? forcedEngineMoves.shift() : await engine.bestMove(S.game.fen());
+    uci = forcedEngineMoves.length ? forcedEngineMoves.shift() : await engineBestMove(S.game.fen());
   } catch (err) {
     console.error('[engine] không lấy được nước đi', err);
     if (alive(token)) await sayError(VI.say.engineError);
@@ -378,6 +408,32 @@ async function engineTurn() {
   await say(VI.say.engineMove(S.lastEngineMoveText));
   if (!alive(token)) return;
   if (over) await endGame();
+}
+
+/** Hỏi máy; nếu engine hỏng (worker chết, không phản hồi) thì khởi động lại một lần rồi hỏi lại. */
+async function engineBestMove(fen) {
+  try {
+    if (testEngineFailures > 0) {
+      testEngineFailures--;
+      engine.terminate();
+      throw new Error('engine lỗi (giả lập để kiểm thử)');
+    }
+    return await engine.bestMove(fen);
+  } catch (err) {
+    console.error('[engine] lỗi, khởi động lại Stockfish', err);
+    await restartEngine();
+    return engine.bestMove(fen);
+  }
+}
+
+async function restartEngine() {
+  try { engine?.terminate(); } catch { /* bỏ qua */ }
+  createAndInitEngine();
+  await engineReadyPromise;
+  if (G && !G.over) {
+    await engine.setStrength(G.elo);
+    await engine.newGame();
+  }
 }
 
 // ---------------------------------------------------------------- lệnh
@@ -468,6 +524,7 @@ async function offerDraw() {
   persist();
   if (S.game.fullmoveNumber() < 20) { await say(VI.say.drawDeclined); return; }
   setPhase('engine');
+  S.clock?.pause(); // máy cân nhắc trên thời gian của máy, không trừ giờ người chơi
   let score = null;
   try {
     score = await engine.evaluate(S.game.fen(), 12);
@@ -475,6 +532,7 @@ async function offerDraw() {
     console.error('[engine] không đánh giá được', err);
   }
   if (!alive(S.token)) return;
+  S.clock?.resume();
   setPhase('player');
   // Điểm theo góc nhìn người chơi (đang tới lượt). Máy đồng ý khi không hơn quá 1,5 tốt.
   if (score !== null && -score <= 150) {
@@ -549,7 +607,11 @@ function onClockTick() {
   if (!settings.clockWarnings || S.clock.active !== S.playerColor || !S.clock.running) return;
   const t = S.clock.time(S.playerColor);
   const w = S.warned;
-  for (const k of Object.keys(w)) if (t > Number(k) + 1000) delete w[k];
+  for (const k of Object.keys(w)) {
+    // Chỉ cảnh báo lại khi giờ tăng đáng kể (ví dụ nhiều lần cộng giây), không lặp "còn một phút" mỗi nước.
+    const rearm = Number(k) >= 30000 ? 60000 : 15000;
+    if (t > Number(k) + rearm) delete w[k];
+  }
   if (t <= 60000 && !w[60000] && S.clock.baseMs > 60000) {
     w[60000] = true;
     if (!tts.speaking && !recognizer.listening && busy === 0) void say(VI.say.oneMinute);
@@ -583,7 +645,7 @@ function describeResult(status, player) {
       return { title: R.draw, reason, speech: R.say.timeoutDraw };
     }
     if (status.winner === player) return { title: R.youWin, reason, speech: R.say.timeoutWin };
-    return { title: R.draw, reason, speech: R.say.insufficient };
+    return { title: R.draw, reason, speech: R.say.timeoutDrawEngine };
   }
   return { title: R.draw, reason, speech: R.say[status.reason] || R.draw };
 }
@@ -621,7 +683,11 @@ async function endGame() {
     lichessUrl: lichessAnalysisUrl(pgn),
     fileName: pgnFileName(),
   }, {
-    onRematch: () => { tts.unlock(); cues.unlock(); void startGame({}); },
+    onRematch: () => {
+      tts.unlock();
+      cues.unlock();
+      void startGame({ preset: { elo: S.elo, playerColor: S.playerColor, tc: S.tc } });
+    },
     onNew: () => toSetup(),
   });
   await say(result.speech);
@@ -639,7 +705,19 @@ function stopSession() {
   G = null;
 }
 
-async function startGame({ saved = null } = {}) {
+/** Dữ liệu đồng hồ lưu trong localStorage có thể thiếu/hỏng: không bao giờ để làm crash ván. */
+function sanitizeTimeControl(tc) {
+  if (!tc || typeof tc !== 'object') return { id: 'none', minutes: 0, increment: 0 };
+  const minutes = Number(tc.minutes) > 0 ? Number(tc.minutes) : 0;
+  const increment = Number(tc.increment) >= 0 ? Number(tc.increment) : 0;
+  return { id: typeof tc.id === 'string' ? tc.id : 'custom', minutes, increment };
+}
+
+/**
+ * @param {{ saved?: object|null, preset?: {elo:number, playerColor:'w'|'b', tc:object}|null }} [opts]
+ *   saved: ván lưu trong localStorage; preset: chơi lại với đúng cài đặt của ván vừa xong
+ */
+async function startGame({ saved = null, preset = null } = {}) {
   stopSession();
   forcedEngineMoves.length = TEST_MODE ? forcedEngineMoves.length : 0;
   const token = ++tokenCounter;
@@ -652,16 +730,19 @@ async function startGame({ saved = null } = {}) {
     saved = null;
     game = createGame();
   }
-  const tc = saved ? saved.timeControl : resolveTimeControl(settings);
-  const playerColor = saved ? saved.playerColor
-    : settings.color === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : settings.color;
-  const elo = saved ? saved.elo : settings.elo;
-  const clock = tc?.minutes
+  const tc = saved ? sanitizeTimeControl(saved.timeControl) : preset ? sanitizeTimeControl(preset.tc) : resolveTimeControl(settings);
+  const playerColor = saved ? (saved.playerColor === 'b' ? 'b' : 'w')
+    : preset ? preset.playerColor
+      : settings.color === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : settings.color;
+  const elo = clampElo(saved ? saved.elo : preset ? preset.elo : settings.elo);
+  let remaining = saved?.clock?.remaining;
+  if (!remaining || !Number.isFinite(remaining.w) || !Number.isFinite(remaining.b)) remaining = undefined;
+  const clock = tc.minutes
     ? createClock({
       baseMs: tc.minutes * 60000,
       incrementMs: (tc.increment || 0) * 1000,
       now: () => performance.now(),
-      remaining: saved?.clock?.remaining,
+      remaining,
     })
     : null;
   G = {
@@ -770,18 +851,24 @@ function releaseWakeLock() {
   wakeLock = null;
 }
 
-function initEngine() {
-  form.setEngineStatus(VI.setup.loadingEngine);
+/** Tạo worker Stockfish mới và bắt đầu khởi động; engineReadyPromise bị từ chối nếu thất bại. */
+function createAndInitEngine() {
+  engineReady = false;
   try {
     engine = createEngine(createWorkerTransport());
   } catch (err) {
-    console.error('[engine] không tạo được worker', err);
-    form.setEngineStatus(VI.setup.engineFailed);
-    showWarning(VI.setup.engineFailed);
-    return;
+    engineReadyPromise = Promise.reject(err);
+    engineReadyPromise.catch(() => {});
+    return engineReadyPromise;
   }
-  engineReadyPromise = engine.init().then(() => {
-    engineReady = true;
+  engineReadyPromise = engine.init().then(() => { engineReady = true; });
+  engineReadyPromise.catch(() => {});
+  return engineReadyPromise;
+}
+
+function initEngine() {
+  form.setEngineStatus(VI.setup.loadingEngine);
+  createAndInitEngine().then(() => {
     form.setEngineStatus(VI.setup.engineReady);
     form.setStartEnabled(true);
   }).catch((err) => {
@@ -808,17 +895,25 @@ function commandFromButton(name) {
   void withBusy(() => runCommand(name)).then(maybeAutoListen);
 }
 
+/** Gõ tay: nước đi không cần xác nhận (người gõ nhìn thấy mình gõ gì); lệnh và trả lời "đúng/sai" như nói. */
 async function handleTyped(text) {
   if (!G || G.over || !text.trim()) return;
-  if (phase() !== 'player' || busy > 0) { cues.play('soft'); return; }
+  const p = phase();
+  if (!['player', 'confirm', 'paused'].includes(p) || busy > 0 || tts.speaking) { cues.play('soft'); return; }
   store.set({ transcript: text });
+  recognizer.abort();
   await withBusy(async () => {
+    if (p === 'confirm') return onConfirmAnswer(interpretConfirm([text]));
+    const r = parseUtterance([text], { mode: 'move', legalMoves: G.game.legalMoves() });
+    if (p === 'paused') {
+      if (r.type === 'command' && ['RESUME', 'TIME', 'HELP'].includes(r.name)) return runCommand(r.name);
+      return say(VI.say.pausedRefuse);
+    }
+    if (r.type === 'command') return runCommand(r.name);
     const san = G.game.trySan(text);
     if (san) return commitPlayerMove(san);
-    const r = parseUtterance([text], { mode: 'move', legalMoves: G.game.legalMoves() });
-    if (r.type === 'command') return runCommand(r.name);
     if (r.type === 'move' && r.matches.length === 1) return commitPlayerMove(r.matches[0]);
-    if (r.type === 'move') return onMoveResult({ ...r, matches: r.matches });
+    if (r.type === 'move') return onMoveResult(r);
     return sayError(VI.say.notUnderstood);
   });
   maybeAutoListen();
@@ -827,6 +922,11 @@ async function handleTyped(text) {
 function bindPlayControls() {
   $('talk').addEventListener('click', onTap);
   $('screen-peek').addEventListener('click', onTap);
+  // Người bịt mắt vỗ đại vào màn hình: mọi chỗ không phải nút bấm đều là "chạm để nói".
+  $('screen-play').addEventListener('click', (e) => {
+    if (e.target.closest('button, a, input, select, summary, details, dialog, label')) return;
+    onTap();
+  });
   $('btn-peek').addEventListener('click', () => commandFromButton('PEEK'));
   $('btn-locate').addEventListener('click', () => commandFromButton('LOCATE'));
   $('btn-repeat').addEventListener('click', () => commandFromButton('REPEAT'));
@@ -876,7 +976,14 @@ function bindPlayControls() {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || dlg.open) return;
     const s = store.get().screen;
     if (s !== 'play' && s !== 'peek') return;
-    if (e.code === 'Space' && tag !== 'BUTTON') { e.preventDefault(); onTap(); return; }
+    if (e.code === 'Space') {
+      if (e.target === $('talk')) return; // nút nói đang có focus: trình duyệt tự bắn click → onTap
+      // Phím cách luôn là "nói", kể cả khi focus đang ở nút khác (bỏ focus để nút đó không bị bấm).
+      e.preventDefault();
+      if (tag === 'BUTTON' || tag === 'SUMMARY' || tag === 'A') e.target.blur();
+      onTap();
+      return;
+    }
     if (e.key === 'p' || e.key === 'P') commandFromButton('PEEK');
     else if (e.key === 'l' || e.key === 'L') commandFromButton('LOCATE');
     else if (e.key === 'r' || e.key === 'R') commandFromButton('REPEAT');
@@ -917,6 +1024,8 @@ function init() {
   });
 
   if (location.protocol === 'file:') showWarning(VI.setup.fileProtocol);
+  // Web app thêm vào màn hình chính trên iOS từng không nhận dạng được giọng nói: nhắc trước.
+  if (navigator.standalone === true) showWarning(VI.setup.iosStandalone, true);
   if (!recognizer.isSupported()) {
     showWarning(VI.setup.noSpeech);
     $('type-box').open = true;
@@ -960,6 +1069,7 @@ function installTestHooks() {
     setEngineDelay: (ms) => { timing.engineDelayMs = ms; },
     setTiming: (patch) => Object.assign(timing, patch),
     forceEngineMove: (uci) => { forcedEngineMoves.push(uci); },
+    failEngine: (times = 1) => { testEngineFailures = times; },
     setClockTime: (who, ms) => {
       if (!G?.clock) return false;
       G.clock.setTime(who === 'player' ? G.playerColor : G.engineColor, ms);

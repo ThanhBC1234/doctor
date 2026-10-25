@@ -41,7 +41,7 @@ export async function openApp(suite, opts = {}) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
-  await page.addInitScript(installFakes);
+  await page.addInitScript(installFakes, opts.fakes || {});
   if (opts.extraInit) await page.addInitScript(opts.extraInit);
   await page.goto(`${suite.server.url}/${opts.query ?? '?test=1'}`);
   await page.waitForFunction(() => window.__blindfold?.getState().engineReady === true, null, { timeout: 30000 });

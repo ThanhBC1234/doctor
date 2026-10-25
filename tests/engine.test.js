@@ -76,6 +76,23 @@ test('mức 2500 tìm được chiếu hết một nước', async () => {
   assert.equal(await engine.bestMove(fen), 'a1a8');
 });
 
+test('worker lỗi → lệnh đang chờ bị từ chối ngay, không treo tới hết thời gian chờ', async () => {
+  const listeners = [];
+  const errors = [];
+  const fake = {
+    post: () => {},
+    onLine: (fn) => listeners.push(fn),
+    onError: (fn) => errors.push(fn),
+  };
+  const e = createEngine(fake, { timeoutMs: 60000 });
+  const p = e.init();
+  const t0 = Date.now();
+  errors.forEach((fn) => fn({ message: 'worker chết' }));
+  await assert.rejects(p, /Stockfish gặp lỗi/);
+  assert.ok(Date.now() - t0 < 1000);
+  await assert.rejects(e.bestMove('fen'), /Stockfish gặp lỗi/);
+});
+
 test('parseInfo', () => {
   const i = parseInfo('info depth 10 seldepth 12 multipv 2 score cp -35 nodes 1000 pv e7e5 g1f3');
   assert.deepEqual(i, { depth: 10, multipv: 2, score: -35, mate: null, move: 'e7e5' });

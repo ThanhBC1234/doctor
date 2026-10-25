@@ -280,6 +280,30 @@ const CASES = [
   ['tiếp tục', 'start', 'cmd:RESUME'],
   ['xem ban co', 'start', 'cmd:PEEK'],
 
+  // --- Tên quân nói sau ô đến, "ăn" nói sau ô đến ---
+  ['f6 mã', 'italian', ['Nf6']],
+  ['ép sáu mã', 'italian', ['Nf6']],
+  ['c5 tượng', 'italian', ['Bc5']],
+  ['e7 vua', 'italian', ['Ke7']],
+  ['e7 hậu', 'italian', ['Qe7']],
+  ['d5 mã ăn tượng', 'knightCaptures', ['Nxd5']],
+  ['mã d5 ăn tượng', 'knightCaptures', ['Nxd5']],
+  ['mã d5 ăn tốt', 'knightCaptures', []],
+  ['e8 hậu', 'promo', ['e8=Q']],
+  ['e8 mã', 'promo', ['e8=N']],
+  ['e1 xe', 'oneRook', ['Re1']],
+  ['a3 xe', 'rooksFile', ['R1a3', 'R5a3']],
+  ['e1 hậu', 'oneRook', []],
+
+  // --- Các cách nghe nhầm thường gặp của nhận dạng giọng nói ---
+  ['tường c5', 'italian', ['Bc5']],
+  ['tưởng c5', 'italian', ['Bc5']],
+  ['hầu e7', 'italian', ['Qe7']],
+  ['mã ếp sáu', 'italian', ['Nf6']],
+  ['giờ sáu', 'italian', ['g6']],
+  ['rê sáu', 'italian', ['d6']],
+  ['yê sáu', 'italian', ['d6']],
+
   // --- Câu rác ---
   ['hello world', 'start', 'unknown'],
   ['', 'start', 'unknown'],

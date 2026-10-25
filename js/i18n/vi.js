@@ -90,6 +90,7 @@ export const VI = {
     fileProtocol: 'Hãy mở trang qua HTTP(S), ví dụ GitHub Pages hoặc "python3 -m http.server". Mở trực tiếp file sẽ không chạy được.',
     micDenied: 'Chưa có quyền dùng micro. Hãy cho phép micro trong cài đặt trình duyệt rồi thử lại.',
     noVietnameseVoice: 'Máy bạn chưa có giọng đọc tiếng Việt. Hãy cài giọng tiếng Việt trong cài đặt hệ điều hành để nghe rõ hơn.',
+    iosStandalone: 'Nếu micro không hoạt động khi mở từ biểu tượng màn hình chính, hãy mở trang này bằng Safari.',
     howTo: 'Cách chơi',
     howToBody: [
       'Bàn cờ sẽ bị ẩn. Chạm vào bất kỳ đâu trên màn hình (hoặc nhấn phím cách) rồi nói nước đi.',
@@ -107,6 +108,7 @@ export const VI = {
     moveNumber: (n) => `Nước ${n}`,
     tapToSpeak: 'Chạm bất kỳ đâu để nói',
     tapToAnswer: 'Chạm để trả lời “đúng” hoặc “sai”',
+    tapToResume: 'Chạm rồi nói “tiếp tục”',
     listening: 'Đang nghe…',
     heard: (t) => `Nghe được: “${t}”`,
     you: 'Bạn',
@@ -198,6 +200,7 @@ export const VI = {
       timeoutLose: 'Bạn hết giờ. Máy thắng.',
       timeoutDraw: 'Bạn hết giờ, nhưng máy không đủ lực chiếu hết. Hòa.',
       timeoutWin: 'Máy hết giờ. Bạn thắng.',
+      timeoutDrawEngine: 'Máy hết giờ, nhưng bạn không đủ lực chiếu hết. Hòa.',
       resign: 'Bạn đã xin thua.',
       agreement: 'Hòa theo thỏa thuận.',
     },

@@ -45,11 +45,15 @@ export function buildPgn(meta) {
   else chess.setHeader('WhiteElo', String(meta.elo));
   chess.setHeader('TimeControl', meta.timeControl || '-');
   if (meta.reason && TERMINATION[meta.reason]) chess.setHeader('Termination', TERMINATION[meta.reason]);
-  let pgn = chess.pgn();
-  // chess.js chỉ tự ghi kết quả khi ván kết thúc theo luật; xin thua / hết giờ phải tự thêm.
+  const pgn = chess.pgn().trimEnd();
   const result = meta.result || '*';
-  if (!pgn.trimEnd().endsWith(result)) pgn = `${pgn.trimEnd()} ${result}`;
-  return pgn;
+  if (!chess.history().length) {
+    // Chưa có nước nào: chess.js in "]\n 0-1"; chuẩn PGN cần một dòng trống giữa header và kết quả.
+    const headers = pgn.slice(0, pgn.lastIndexOf(']') + 1);
+    return `${headers}\n\n${result}`;
+  }
+  // chess.js chỉ tự ghi kết quả khi ván kết thúc theo luật; xin thua / hết giờ phải tự thêm.
+  return pgn.endsWith(result) ? pgn : `${pgn} ${result}`;
 }
 
 export function lichessAnalysisUrl(pgn) {

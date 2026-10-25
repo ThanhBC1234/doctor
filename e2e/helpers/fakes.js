@@ -1,7 +1,7 @@
 // Script chạy trong trang trước mọi script khác (page.addInitScript):
 // thay SpeechRecognition và speechSynthesis bằng bản giả điều khiển được từ test.
 
-export function installFakes() {
+export function installFakes(opts = {}) {
   const log = [];
 
   const fakeRec = {
@@ -97,11 +97,16 @@ export function installFakes() {
 
   Object.defineProperty(window, 'SpeechRecognition', { value: FakeSpeechRecognition, configurable: true, writable: true });
   Object.defineProperty(window, 'webkitSpeechRecognition', { value: FakeSpeechRecognition, configurable: true, writable: true });
-  Object.defineProperty(window, 'speechSynthesis', { value: fakeSynth, configurable: true, writable: true });
-  if (!window.SpeechSynthesisUtterance) {
-    window.SpeechSynthesisUtterance = class { constructor(t) { this.text = t; } };
+  if (opts.realSynth) {
+    // Giữ speechSynthesis thật của trình duyệt (headless không có giọng → bắn lỗi): kiểm tra app không kẹt.
+    window.__fakeSynth = { get speaking() { return window.speechSynthesis.speaking; }, spoken: [] };
+  } else {
+    Object.defineProperty(window, 'speechSynthesis', { value: fakeSynth, configurable: true, writable: true });
+    if (!window.SpeechSynthesisUtterance) {
+      window.SpeechSynthesisUtterance = class { constructor(t) { this.text = t; } };
+    }
+    window.__fakeSynth = fakeSynth;
   }
   window.__fakeRecognition = fakeRec;
-  window.__fakeSynth = fakeSynth;
   window.__consoleErrors = log;
 }

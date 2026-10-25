@@ -128,6 +128,14 @@ test('PGN có header đúng và đọc lại được', () => {
   assert.equal(c.history().length, 4);
 });
 
+test('PGN chưa có nước nào: dòng trống giữa header và kết quả', () => {
+  const pgn = buildPgn({ uciMoves: [], playerColor: 'w', elo: 1400, result: '0-1', reason: 'resign' });
+  assert.match(pgn, /\[Termination "normal"\]\n\n0-1$/);
+  const c = new Chess();
+  c.loadPgn(pgn);
+  assert.equal(c.history().length, 0);
+});
+
 test('PGN ván chiếu hết', () => {
   const g = createGame();
   play(g, 'f3 e5 g4 Qh4#');
