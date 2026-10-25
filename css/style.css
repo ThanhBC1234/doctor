@@ -201,11 +201,12 @@ button, input, select { font: inherit; color: inherit; }
 /* ---------- Bàn cờ ---------- */
 .board-wrap { width: 100%; max-width: min(100%, 78dvh); margin: 0 auto; }
 .board {
-  position: relative; display: grid; grid-template-columns: repeat(8, 1fr);
+  position: relative; display: grid;
+  grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); /* hàng trống không bị bẹp */
   aspect-ratio: 1; width: 100%; border-radius: 8px; overflow: hidden;
   border: 2px solid var(--border);
 }
-.sq { position: relative; display: flex; align-items: center; justify-content: center; }
+.sq { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; }
 .sq.light { background: var(--sq-light); }
 .sq.dark { background: var(--sq-dark); }
 .sq.last::after { content: ''; position: absolute; inset: 0; background: var(--sq-last); }
@@ -235,11 +236,12 @@ button, input, select { font: inherit; color: inherit; }
 .nav .btn { min-width: 56px; }
 .gameover h3 { margin: 8px 0 0; }
 .movelist {
-  margin: 0; padding: 10px 10px 10px 44px; max-height: 40dvh; overflow: auto;
+  margin: 0; padding: 10px; list-style: none; max-height: 40dvh; overflow: auto;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   display: grid; grid-template-columns: 1fr; gap: 2px;
 }
-.movelist li { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.movelist li { display: grid; grid-template-columns: 2.6em 1fr 1fr; gap: 6px; align-items: center; }
+.movelist .num { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 .movelist button {
   min-height: 36px; border: 0; border-radius: 8px; background: transparent; text-align: left; padding: 4px 8px; cursor: pointer;
 }

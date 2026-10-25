@@ -176,6 +176,7 @@ function startListening({ auto = false } = {}) {
   if (!canListen()) return false;
   if (!recognizer.isSupported()) return false;
   lastStartWasAuto = auto;
+  if (phase() !== 'confirm') store.set({ transcript: '' }); // khi chờ xác nhận thì giữ câu vừa nghe
   micStarts.push({ phase: phase(), turn: G.game.turn(), speaking: tts.speaking, auto });
   cues.play('listen');
   return recognizer.start();

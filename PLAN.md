@@ -405,22 +405,26 @@ worker.postMessage(`go movetime ${ms}` | `go depth ${d}`);
 
 ### 6.2 Ánh xạ Elo → tham số (`elo.js`, module thuần)
 
-`UCI_Elo` chỉ từ 1320. Mức dưới mô phỏng bằng `Skill Level` thấp + độ sâu nhỏ. Bảng (tinh chỉnh được, mọi giá trị nằm trong `ELO_TABLE`):
+`UCI_Elo` chỉ từ 1320, và Stockfish coi **UCI_Elo 1320 ≈ Skill Level 0** (chọn ngẫu nhiên có trọng số trong ≥ 4 nước đầu, ở độ sâu 1). Vì vậy mức dưới 1320 **không được** dùng Skill > 0 (sẽ mạnh hơn 1320). Bảng thực tế (`ELO_LOW_TABLE` trong `js/elo.js`):
 
 | Elo UI | Cách giới hạn | `go` |
 |---|---|---|
-| 1000 | `UCI_LimitStrength false`, `Skill Level 0` | `go depth 1` |
-| 1050 | Skill Level 0 | `go depth 2` |
-| 1100 | Skill Level 1 | `go depth 2` |
-| 1150 | Skill Level 2 | `go depth 3` |
-| 1200 | Skill Level 3 | `go depth 3` |
-| 1250 | Skill Level 4 | `go depth 4` |
-| 1300 | Skill Level 5 | `go depth 4` |
-| 1320–2500 (bước 50) | `UCI_LimitStrength true`, `UCI_Elo <elo>`, `Skill Level 20` | `go movetime 800` (1320–1800) / `go movetime 1200` (1850–2500) |
+| 1000 | Skill 0, `MultiPV 8`, thay bằng nước kém hơn với xác suất 0.50, cửa sổ 400 cp | `go depth 3` |
+| 1050 | Skill 0, `MultiPV 8`, 0.43, 350 cp | `go depth 3` |
+| 1100 | Skill 0, `MultiPV 7`, 0.36, 300 cp | `go depth 3` |
+| 1150 | Skill 0, `MultiPV 7`, 0.30, 250 cp | `go depth 3` |
+| 1200 | Skill 0, `MultiPV 6`, 0.24, 200 cp | `go depth 3` |
+| 1250 | Skill 0, `MultiPV 6`, 0.18, 150 cp | `go depth 3` |
+| 1300 | Skill 0, `MultiPV 5`, 0.12, 120 cp | `go depth 3` |
+| 1350–2500 (bước 50) | `UCI_LimitStrength true`, `UCI_Elo <elo>`, `Skill Level 20`, `MultiPV 1` | `go movetime 800` (≤ 1800) / `go movetime 1200` (≥ 1850) |
 
-Hàm `eloToEngineParams(elo) → { options: {name:value}, goCommand: string }`. Giá trị 1000–1300 nội suy làm tròn tới dòng gần nhất. Thêm chú thích trong UI: *"Mức dưới 1320 là ước lượng."*
+Hàm `eloToEngineParams(elo) → { options, goCommand, randomize, approximate }`. UI ghi chú: *"Mức dưới 1320 là ước lượng."*
 
-**Ngẫu nhiên hóa nhẹ ở mức thấp (1000–1300)**: dùng `MultiPV 3` và chọn ngẫu nhiên trong các nước có `score` cách nước tốt nhất ≤ 80 cp, với xác suất 35%. Giúp máy mức thấp không chơi "quá chính xác" ở độ sâu 1–4. Tắt khi Elo ≥ 1320.
+**Làm yếu mức thấp (`pickRandomized` trong `js/engine.js`)** — chỉ có thể làm nước đi tệ đi:
+1. `MultiPV` lớn hơn 4 → Skill 0 tự chọn trong nhiều ứng viên hơn.
+2. Với xác suất `probability`, thay nước Stockfish đã chọn bằng một ứng viên **có điểm thấp hơn nó** nhưng không kém nước tốt nhất quá `windowCp`. Không bao giờ thay bằng nước tốt hơn.
+
+*(Quyết định khi triển khai: bảng ban đầu dùng Skill 1–5 cho 1100–1300; đo thực tế cho thấy 1300 mạnh hơn 1600 nên đã đổi. Đo bằng `node tools/measure-strength.mjs`, 100 thế cờ, mất điểm trung bình/nước: 1000 ≈ 133 cp, 1150 ≈ 129, 1300 ≈ 80, 1350 ≈ 88, 1800 ≈ 75, 2500 ≈ 50. Số đo có nhiễu ±15 cp.)*
 
 ### 6.3 Test engine trong Node (`tests/engine.test.js`)
 
@@ -495,7 +499,7 @@ Một object `VI` chứa **mọi** chuỗi: nhãn UI, câu TTS (dạng hàm nế
 - Test: `tests/elo.test.js`, `tests/engine.test.js`.
 
 **Bước 2 — Giọng nói**
-- `speech/normalize.js`, `speech/parser.js`, `speech/speak-move.js` **kèm test table-driven** (viết test trước, ≥ 100 câu: xem Phụ lục A). Chạy `node --test tests/`.
+- `speech/normalize.js`, `speech/parser.js`, `speech/speak-move.js` **kèm test table-driven** (viết test trước, ≥ 100 câu: xem Phụ lục A). Chạy `npm test`.
 - `speech/tts.js`, `speech/recognition.js`, `ui/audio-cues.js`. Nối vào vòng lặp 4.3, có xác nhận.
 - Lệnh REPEAT, HELP, HISTORY, RESIGN.
 
@@ -509,7 +513,7 @@ Một object `VI` chứa **mọi** chuỗi: nhãn UI, câu TTS (dạng hàm nế
 
 **Bước 5 — Kiểm thử toàn diện (bắt buộc, xem mục 14)**
 - Hoàn thiện `window.__blindfold` và recognizer/TTS giả cho Playwright.
-- Viết và chạy xanh toàn bộ E1–E20, `full-game.test.js` 3 ván, `node --test tests/`.
+- Viết và chạy xanh toàn bộ E1–E20, `full-game.test.js` 3 ván, `npm run test:all`.
 - Chụp ảnh màn hình, viết `TEST-REPORT.md`. Chỉ sau bước này mới báo hoàn thành.
 
 Lưu ý: test đơn vị của mỗi module viết **ngay trong bước tạo module đó**, không dồn về Bước 5. Bước 5 là chạy lại toàn bộ + E2E + báo cáo.
@@ -521,7 +525,7 @@ Lưu ý: test đơn vị của mỗi module viết **ngay trong bước tạo mo
 Mỗi dòng dưới đây phải được **chứng minh bằng test tự động** ở mục 14 (ghi số test tương ứng vào `TEST-REPORT.md`), trừ những dòng ghi rõ "thủ công".
 
 - [ ] Mở `index.html` qua GitHub Pages: không lỗi console, engine tải < 5 s trên 4G (thủ công sau khi deploy).
-- [ ] Không có bước build; không có `package.json` dependencies lúc chạy (có thể có `package.json` chỉ với `"scripts": {"test": "node --test tests/"}`, `"type": "module"`).
+- [ ] Không có bước build; không có `package.json` dependencies lúc chạy (chỉ có `package.json` với `"type": "module"` và `scripts`).
 - [ ] Chọn 1000 Elo: máy đi nhanh, chơi yếu rõ rệt (để tốt lộ, bỏ quân). Chọn 2500: máy chơi chắc.
 - [ ] Nói "e4", "mã f3", "tốt ăn d5", "nhập thành gần", "e2 e4", "knight f3", "echo four" → đều đi đúng.
 - [ ] Nói nước không hợp lệ → máy báo và không đổi trạng thái.
@@ -536,8 +540,8 @@ Mỗi dòng dưới đây phải được **chứng minh bằng test tự độn
 - [ ] Chiếu hết / pat / lặp 3 lần → GAMEOVER đúng thông điệp, bàn cờ hiện, PGN tải được và mở được trên Lichess.
 - [ ] F5 giữa ván → đề nghị tiếp tục → khôi phục đúng FEN, đồng hồ, quyền trợ giúp.
 - [ ] Trên điện thoại: vỗ màn hình để nói; màn hình không tắt trong ván; không zoom khi chạm đôi.
-- [ ] `node --test tests/` xanh (≥ 100 câu parser).
-- [ ] `node --test e2e/` xanh: E1–E20 + 3 ván tự động ở 1000 / 1800 / 2500 Elo.
+- [ ] `npm test` xanh (≥ 100 câu parser).
+- [ ] `npm run test:e2e` xanh: E1–E20 + 3 ván tự động ở 1000 / 1800 / 2500 Elo.
 - [ ] Mic **không bao giờ** bật khi TTS đang đọc hoặc máy đang nghĩ (E17).
 - [ ] `TEST-REPORT.md` có đủ: lệnh, kết quả, ảnh 4 màn hình, danh mục cần người dùng tự kiểm trên điện thoại thật.
 
@@ -564,7 +568,7 @@ Mỗi dòng dưới đây phải được **chứng minh bằng test tự độn
   Ở chế độ test, TTS và tiếng bíp **không phát ra loa** nhưng vẫn ghi log; thời gian chờ (600 ms độ trễ máy, 300 ms sau TTS, 10 s peek) có thể rút ngắn qua `setEngineDelay` / `getState().timers`.
 - Bàn cờ, đồng hồ, chỉ số quyền trợ giúp có `data-testid` ổn định: `board`, `square-e4`, `clock-player`, `clock-engine`, `hint-peek`, `hint-locate`, `status`, `transcript`, `movelist`, `result`.
 
-### 14.2 Lớp 1 — Test đơn vị (`node --test tests/`)
+### 14.2 Lớp 1 — Test đơn vị (`npm test`)
 
 Bắt buộc có và xanh:
 - `normalize.test.js`: alias cột/hàng/quân, tách token dính (`nf3`, `e2e4`, `exd5`), bỏ dấu, xung đột "xe".
@@ -576,7 +580,7 @@ Bắt buộc có và xanh:
 - `game.test.js`: kết thúc ván các loại (chiếu hết, pat, lặp 3, 50 nước, không đủ lực), PGN có header đúng, khôi phục từ saved state cho ra cùng FEN.
 - `engine.test.js`: Stockfish chạy trong Node; mức 1000 và 2500 trả `bestmove` hợp lệ cho 5 FEN khác nhau (khai cuộc, trung cuộc, tàn cuộc, có phong cấp, chỉ 1 nước hợp lệ); `evaluate()` trả số.
 
-Lệnh: `node --test tests/` (Node ≥ 18). Phải có `package.json` với `"type":"module"`, `"scripts":{"test":"node --test tests/","test:e2e":"node --test e2e/","test:all":"npm test && npm run test:e2e"}`. **Không** có `dependencies`; Playwright chỉ ở `devDependencies` nếu không có sẵn (xem 14.3).
+Lệnh: `npm test` (Node ≥ 18). `package.json` có `"type":"module"` và `"scripts":{"test":"node --test \"tests/**/*.test.js\"","test:e2e":"node --test --test-concurrency=1 \"e2e/**/*.test.js\"","test:all":"npm test && npm run test:e2e"}`. *(Node 22 không nhận thư mục làm tham số của `--test`, phải dùng mẫu glob.)* **Không** có `dependencies`; Playwright chỉ ở `devDependencies` nếu không có sẵn (xem 14.3).
 
 ### 14.3 Lớp 2 — Test đầu-cuối trong trình duyệt (Playwright + Chromium)
 
@@ -733,3 +737,31 @@ Vị trí test mặc định: sau `1.e4 e5 2.Nf3 Nc6 3.Bc4` (Đen đi) và một
 Với `announceCaptures=true`: `Bxe5` → `Tượng ăn Tốt e 5`; `Qh5#` → `Hậu hát 5, chiếu hết`; `exd6` (en passant) → `Tốt e ăn dê 6, bắt tốt qua đường`.
 
 (Dấu phẩy chỉ để TTS ngắt; test so sánh sau khi bỏ dấu phẩy và gộp khoảng trắng.)
+
+---
+
+## 16. Nhật ký quyết định khi triển khai
+
+Những chỗ đặc tả chưa nói rõ hoặc phải điều chỉnh khi code, theo nguyên tắc "đơn giản hơn, an toàn hơn cho người bịt mắt":
+
+| Chủ đề | Quyết định | Lý do |
+|---|---|---|
+| Mức Elo < 1320 | Skill 0 + MultiPV lớn + chỉ thay bằng nước kém hơn (mục 6.2) | Bảng cũ (Skill 1–5) làm mức 1300 mạnh hơn 1600 khi đo thực tế |
+| Lệnh test | `node --test "tests/**/*.test.js"` (qua `npm test`) | Node 22 không nhận thư mục làm tham số `--test` |
+| `vendor/stockfish/package.json` | `{"type":"commonjs"}` | `package.json` gốc có `"type":"module"` làm Node đọc sai file Stockfish; trình duyệt không bị ảnh hưởng |
+| URL engine | `stockfish-19-lite-single.js?v=19.0.1#<url .wasm?v=19.0.1>` | stockfish.js đọc đường dẫn `.wasm` từ phần `#`; `?v=` tránh cache cũ |
+| Playwright trong e2e | Nạp bằng `createRequire(import.meta.url)('playwright')` | `import` ESM không dùng `NODE_PATH` (nơi Playwright được cài trong môi trường cloud) |
+| Tên file PGN | `co-mu-YYYY-MM-DD-HHmm.pgn` (không dấu) | Tên có dấu dễ lỗi khi tải trên một số trình duyệt/hệ điều hành |
+| Lệnh "thời gian" khi máy nghĩ | Chỉ dùng được khi tới lượt người chơi | Micro luôn tắt khi máy nghĩ (nguyên tắc an toàn); máy chỉ nghĩ ≤ 1,2 giây |
+| Micro tự mở | Tự mở khi chờ "đúng/sai", khi đang xem bàn cờ (để nghe "xong"), và ở chế độ nghe liên tục | Người bịt mắt không cần chạm thêm lần nữa |
+| Safari iOS | Nếu micro tự mở bị từ chối (`not-allowed`) thì im lặng, màn hình ghi "Chạm để trả lời" | iOS chỉ cho mở micro trong cú chạm; không được báo nhầm "mất quyền micro" |
+| Chạm khi đang nghe | Không làm gì | Nhận dạng tự dừng khi người chơi nói xong; chạm lần hai dễ cắt ngang câu nói |
+| Đồng hồ đầu ván | Bắt đầu chạy sau lời hướng dẫn "Chạm vào màn hình rồi nói nước đi" | Không trừ giờ người chơi khi máy đang nói |
+| Gõ nước đi | Không hỏi xác nhận; thử SAN đúng chuẩn (phân biệt hoa thường) trước, rồi mới qua parser | Người gõ đã nhìn thấy nước mình gõ |
+| Nhiều nước khớp | Đọc tối đa 3 lựa chọn, sắp theo ô xuất phát a→h | Thứ tự ổn định, dễ nghe |
+| Từ không dấu | "tuong" bị bỏ (vừa là "tượng" vừa là "tướng") | Không đoán khi không chắc |
+| Lệnh thêm | "tôi vừa đi gì" (`MY_LAST`) | Người chơi quên nước của chính mình |
+| Cầu hòa | Đánh giá ở sức mạnh tối đa, độ sâu 12, rồi trả lại mức chơi cũ | Mức chơi thấp cho điểm đánh giá không đáng tin |
+| Hộp cài đặt trong ván | Đổi xác nhận, thông báo ăn quân, cảnh báo đồng hồ, cách đọc cột, tốc độ đọc; nút "Lưu và thoát" | Không phải thoát ván để đổi cài đặt |
+| `window.__blindfold` (chế độ `?test=1`) | Thêm `getCueLog`, `getMicStarts`, `setTiming`, `setClockTime`, `setSettings`, `getSettings`, `getPgn` | Để test điều khiển thời gian, đồng hồ, cài đặt |
+| Công cụ | `tools/measure-strength.mjs` (đo độ mạnh), `tools/screenshots.mjs` (chụp màn hình) | Phục vụ tinh chỉnh và báo cáo |

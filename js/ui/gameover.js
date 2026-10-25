@@ -30,6 +30,10 @@ export function showGameover(data, handlers) {
   const items = [];
   for (let i = 0; i < total; i += 2) {
     const li = document.createElement('li');
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = `${i / 2 + 1}.`;
+    li.appendChild(num);
     for (const j of [i, i + 1]) {
       const m = data.history[j];
       const b = document.createElement('button');
@@ -45,7 +49,6 @@ export function showGameover(data, handlers) {
     }
     items.push(li);
   }
-  // Ván Đen đi trước (do khôi phục) vẫn đánh số theo chess.js nên giữ đơn giản: 1 dòng = 2 nửa nước.
   list.replaceChildren(...items);
 
   $('nav-first').onclick = () => { ply = 0; draw(); };

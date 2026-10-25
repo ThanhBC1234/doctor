@@ -9,6 +9,5 @@
     "test:e2e": "node --test --test-concurrency=1 \"e2e/**/*.test.js\"",
     "test:all": "npm test && npm run test:e2e",
     "serve": "python3 -m http.server 8080"
-  },
-  "license": "GPL-3.0-or-later"
+  }
 }
